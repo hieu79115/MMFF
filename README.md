@@ -41,47 +41,80 @@ PY
 	- Joints: NTU=25, UTD=20.
 - Current status: only `is_dummy=True` is supported, which generates random data for pipeline testing and quick benchmarking.
 
-**Quick Run (Sanity Check)**
-Run the end-to-end pipeline with dummy data:
+## How to Run
+
+### 1. Quick Sanity Check (End-to-End Pipeline)
+Run the complete pipeline with dummy data to verify setup:
 ```
 python test_pipeline.py
 ```
-Expected: prints input shapes (Skeleton, RGB) and model output shape.
+**Expected output:** prints skeleton shape, RGB shape, and model output shape.
 
-**Training (Dummy Data)**
-- Train 2 epochs on UTD (27 classes) with dummy data:
-```
-python train.py --dataset utd --epochs 2 --is_dummy
-```
-- Train on NTU (60 classes):
-```
-python train.py --dataset ntu --epochs 2 --is_dummy
-```
-- Outputs:
-	- Best weights saved as `best_model_ntu.pth` or `best_model_utd.pth`.
-	- Training history plots saved as `history_ntu.png` or `history_utd.png`.
+### 2. Training
 
-**Evaluation (Dummy Data)**
-Evaluate a previously trained checkpoint:
+#### Train on NTU Dataset (60 classes):
 ```
-python test.py --dataset utd --is_dummy
+python train.py --dataset ntu --epochs 10 --batch_size 4 --is_dummy
+```
+
+#### Train on UTD Dataset (27 classes):
+```
+python train.py --dataset utd --epochs 10 --batch_size 4 --is_dummy
+```
+
+#### Key Training Options:
+- `--dataset`: `ntu` or `utd` (default: `ntu`)
+- `--epochs`: number of training epochs (default: 10)
+- `--batch_size`: batch size (default: 4)
+- `--lr`: learning rate (default: 1e-4)
+- `--is_dummy`: use dummy data for testing (default: False, but required for now)
+
+**Example with custom hyperparameters:**
+```
+python train.py --dataset ntu --epochs 20 --batch_size 8 --lr 5e-5 --is_dummy
+```
+
+**Outputs:**
+- Best weights: `best_model_ntu.pth` or `best_model_utd.pth`
+- Training history plot: `history_ntu.png` or `history_utd.png`
+
+### 3. Evaluation
+
+Evaluate a trained checkpoint:
+```
+python test.py --dataset ntu --batch_size 4 --is_dummy
+python test.py --dataset utd --batch_size 4 --is_dummy
+```
+
+#### Key Evaluation Options:
+- `--dataset`: `ntu` or `utd` (default: `ntu`)
+- `--batch_size`: batch size (default: 4)
+- `--is_dummy`: use dummy data (default: False, but required for now)
+
+**Note:** With `is_dummy=True`, accuracy will be random (for pipeline testing only). When real data is integrated, the script will also generate `confusion_matrix_{dataset}.png`.
+
+### 4. Full Training Workflow Example
+```bash
+# 1. Quick sanity check
+python test_pipeline.py
+
+# 2. Train the model
+python train.py --dataset ntu --epochs 10 --is_dummy
+
+# 3. Evaluate the model
 python test.py --dataset ntu --is_dummy
 ```
-When `is_dummy=True`, accuracy is random (intended for pipeline checks). With real data later, the script will also output `confusion_matrix_{dataset}.png`.
 
-**Main CLI Arguments**
-- [train.py](train.py)
-	- `--dataset`: `ntu` or `utd` (default `ntu`).
-	- `--epochs`: number of epochs.
-	- `--batch_size`: default 4.
-	- `--lr`: learning rate (default 1e-4).
-	- `--is_dummy`: enable dummy data generation.
-- [test.py](test.py)
-	- `--dataset`: `ntu` or `utd`.
-	- `--batch_size`: default 4.
-	- `--is_dummy`: use dummy data to evaluate the run path and checkpoint flow.
+**Additional Information**
 
-**Expected Inputs (for real data)**
+### Python and CUDA Check
+Before running, verify your environment:
+```
+python --version
+python -c "import torch; print('PyTorch version:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
+```
+
+### Expected Inputs (for real data)
 - Skeleton: tensor `(N, 3, T=32, V)` where `V=25 (NTU)` or `V=20 (UTD)`.
 - RGB: tensor `(N, 3, 299, 299)` (apply ImageNet normalization if using pretrained).
 - `MMFFDataset` returns a 4-tuple: `(skeleton_feat, rgb_img, 0, label)` where the 3rd element is a placeholder.
