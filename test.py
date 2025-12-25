@@ -1,16 +1,11 @@
 import argparse
 import torch
 from torch.utils.data import DataLoader
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
-import matplotlib.pyplot as plt
-import seaborn as sns
 import os
 
-# Import module của dự án
-from models.mmff_net import MMFF_Net_Advanced
-from utils.dataset import MMFFDataset
-
 def plot_confusion_matrix(cm, classes, filename):
+    import matplotlib.pyplot as plt
+    import seaborn as sns
     plt.figure(figsize=(10, 8))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
     plt.ylabel('True Label')
@@ -25,10 +20,16 @@ def main():
     parser = argparse.ArgumentParser(description='Test MMFF Model')
     parser.add_argument('--dataset', type=str, default='ntu', choices=['ntu', 'utd'], 
                         help='dataset name: ntu or utd')
+    parser.add_argument('--stage', type=str, default='fusion', choices=['skeleton', 'rgb', 'fusion'],
+                        help="Which stage checkpoint to evaluate: 'skeleton', 'rgb', or 'fusion'")
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--is_dummy', action='store_true', help='Use dummy data for testing')
     
     args = parser.parse_args()
+
+    # Import module của dự án (defer until after argparse so --help works without ML deps installed)
+    from models.mmff_net import MMFF_Net_Advanced
+    from utils.dataset import MMFFDataset
     
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -38,7 +39,12 @@ def main():
     else:
         NUM_CLASSES = 27
         
-    MODEL_PATH = f"best_model_{args.dataset}.pth"
+    # Keep compatibility with both naming schemes:
+    # - New (train.py): best_{stage}_{dataset}.pth
+    # - Old: best_model_{dataset}.pth
+    preferred_model_path = f"best_{args.stage}_{args.dataset}.pth"
+    legacy_model_path = f"best_model_{args.dataset}.pth"
+    MODEL_PATH = preferred_model_path if os.path.exists(preferred_model_path) else legacy_model_path
     
     print(f"Evaluating on {args.dataset.upper()} (Classes: {NUM_CLASSES})...")
     
@@ -73,13 +79,20 @@ def main():
             skel = skel.to(DEVICE)
             rgb = rgb.to(DEVICE)
             
-            outputs = model(skel, rgb)
+            outputs = model(skel, rgb, stage=args.stage)
             _, predicted = torch.max(outputs, 1)
             
             all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
             
     # --- 5. Report ---
+    try:
+        from sklearn.metrics import accuracy_score, confusion_matrix
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(
+            "Missing optional dependency for metrics/plots. Install with: pip install -r requirements.txt"
+        ) from e
+
     acc = accuracy_score(all_labels, all_preds)
     print(f"\n>>> Final Test Accuracy: {acc*100:.2f}%")
     
