@@ -126,7 +126,7 @@ def process_utd_mhad(raw_data_path, output_path, num_frames=32):
 
 if __name__ == "__main__":
     # SỬA ĐƯỜNG DẪN CỦA BẠN Ở ĐÂY
-    raw_path = r"C:\Users\thinh\Downloads\UTD_MHAD" 
+    raw_path = r"" 
     out_path = r"./data"
     
     process_utd_mhad(raw_path, out_path)

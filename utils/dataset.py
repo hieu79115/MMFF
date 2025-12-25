@@ -41,6 +41,38 @@ class MMFFDataset(Dataset):
         if not self.is_dummy:
             self._load_real_data()
 
+    @staticmethod
+    def _parse_label_object(obj):
+        # Common formats:
+        # 1) (sample_name, labels)
+        # 2) (sample_name, labels, ...extra)
+        # 3) {'sample_name'/'names': [...], 'label'/'labels': [...]}
+        # 4) [(name, label), (name, label), ...]
+
+        if isinstance(obj, (tuple, list)):
+            if len(obj) >= 2 and not (
+                len(obj) > 0 and isinstance(obj[0], (tuple, list)) and len(obj[0]) == 2
+            ):
+                sample_name, labels = obj[0], obj[1]
+                return list(sample_name), list(labels)
+
+            if len(obj) > 0 and isinstance(obj[0], (tuple, list)) and len(obj[0]) == 2:
+                sample_name, labels = zip(*obj)
+                return list(sample_name), list(labels)
+
+        if isinstance(obj, dict):
+            name_keys = ('sample_name', 'sample_names', 'names', 'name')
+            label_keys = ('labels', 'label', 'y')
+            name_key = next((k for k in name_keys if k in obj), None)
+            label_key = next((k for k in label_keys if k in obj), None)
+            if name_key is not None and label_key is not None:
+                return list(obj[name_key]), list(obj[label_key])
+
+        raise ValueError(
+            'Unsupported label pickle format. Expected (names, labels), (names, labels, ...), '
+            'a dict with names/labels keys, or a list of (name, label) pairs.'
+        )
+
     def _load_real_data(self):
         prefix = 'train' if self.mode == 'train' else 'val'
         data_path = os.path.join(self.root_dir, f'{prefix}_data.npy')
@@ -48,8 +80,14 @@ class MMFFDataset(Dataset):
         
         try:
             with open(label_path, 'rb') as f:
-                self.sample_name, self.labels = pickle.load(f)
+                obj = pickle.load(f)
+                self.sample_name, self.labels = self._parse_label_object(obj)
             self.skeleton_data = np.load(data_path, mmap_mode='r') 
+
+            if len(self.sample_name) != len(self.labels):
+                raise ValueError(
+                    f'Label file is inconsistent: names={len(self.sample_name)} labels={len(self.labels)}'
+                )
         except Exception as e:
             print(f"Error loading data: {e}")
             self.labels = []
@@ -69,7 +107,9 @@ class MMFFDataset(Dataset):
             noise = np.random.normal(0, 0.01, skel.shape)
             skel = skel + noise
             
-        skel_tensor = torch.from_numpy(skel).float()
+        # If skeleton data is memory-mapped (mmap_mode='r') or a view, it can be non-writable.
+        # PyTorch warns because writing to such a tensor is undefined behavior.
+        skel_tensor = torch.from_numpy(np.array(skel, copy=True)).float()
 
         # 2. RGB Image
         video_name = self.sample_name[idx]
