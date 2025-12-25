@@ -113,7 +113,12 @@ class MMFFDataset(Dataset):
 
         # 2. RGB Image
         video_name = self.sample_name[idx]
-        img_path = os.path.join(self.root_dir, 'images', video_name + '.jpg')
+        video_name_str = str(video_name)
+        if video_name_str.lower().endswith(('.jpg', '.jpeg', '.png')):
+            img_filename = video_name_str
+        else:
+            img_filename = video_name_str + '.jpg'
+        img_path = os.path.join(self.root_dir, 'images', img_filename)
         try:
             image = Image.open(img_path).convert('RGB')
             rgb_tensor = self.transform(image)
