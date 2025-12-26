@@ -61,14 +61,30 @@ def main():
     parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--batch_size', type=int, default=8) # Batch nhỏ tốt cho UTD
     parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--val_ratio', type=float, default=0.1, help='Validation ratio split from training set')
+    parser.add_argument('--split_seed', type=int, default=42, help='Random seed for train/val split')
     args = parser.parse_args()
 
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     NUM_CLASSES = 60 if args.dataset == 'ntu' else 27
     
     # Dataset & Loader
-    train_ds = MMFFDataset(mode='train', is_dummy=False, num_classes=NUM_CLASSES, dataset=args.dataset)
-    val_ds = MMFFDataset(mode='test', is_dummy=False, num_classes=NUM_CLASSES, dataset=args.dataset)
+    train_ds = MMFFDataset(
+        mode='train',
+        is_dummy=False,
+        num_classes=NUM_CLASSES,
+        dataset=args.dataset,
+        val_ratio=args.val_ratio,
+        split_seed=args.split_seed,
+    )
+    val_ds = MMFFDataset(
+        mode='val',
+        is_dummy=False,
+        num_classes=NUM_CLASSES,
+        dataset=args.dataset,
+        val_ratio=args.val_ratio,
+        split_seed=args.split_seed,
+    )
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
     
@@ -108,7 +124,11 @@ def main():
         scheduler.step(val_acc)
         current_lr = optimizer.param_groups[0]['lr']
         
-        print(f"Ep {epoch+1} | LR: {current_lr:.6f} | Train: {train_acc:.2f}% | Val: {val_acc:.2f}%")
+        print(
+            f"Ep {epoch+1} | LR: {current_lr:.6f} | "
+            f"Train: {train_acc:.2f}% (loss {train_loss:.4f}) | "
+            f"Val: {val_acc:.2f}% (loss {val_loss:.4f})"
+        )
         
         history['train_acc'].append(train_acc); history['val_acc'].append(val_acc)
         history['train_loss'].append(train_loss); history['val_loss'].append(val_loss)

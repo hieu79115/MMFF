@@ -110,17 +110,17 @@ def process_utd_mhad(raw_data_path, output_path, num_frames=32):
     np.random.shuffle(indices)
     
     split = int(0.8 * total_samples)
-    train_idx, val_idx = indices[:split], indices[split:]
+    train_idx, test_idx = indices[:split], indices[split:]
     
     # Lưu Train
     np.save(os.path.join(output_path, 'train_data.npy'), all_data[train_idx])
     with open(os.path.join(output_path, 'train_label.pkl'), 'wb') as f:
         pickle.dump(([names_list[i] for i in train_idx], [labels_list[i] for i in train_idx]), f)
         
-    # Lưu Val
-    np.save(os.path.join(output_path, 'val_data.npy'), all_data[val_idx])
-    with open(os.path.join(output_path, 'val_label.pkl'), 'wb') as f:
-        pickle.dump(([names_list[i] for i in val_idx], [labels_list[i] for i in val_idx]), f)
+    # Lưu Test (held-out)
+    np.save(os.path.join(output_path, 'test_data.npy'), all_data[test_idx])
+    with open(os.path.join(output_path, 'test_label.pkl'), 'wb') as f:
+        pickle.dump(([names_list[i] for i in test_idx], [labels_list[i] for i in test_idx]), f)
         
     print("Hoàn tất! Dữ liệu đã sẵn sàng tại:", output_path)
 

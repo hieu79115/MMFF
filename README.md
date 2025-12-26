@@ -1,6 +1,6 @@
 **Overview**
 - MMFF (Multi-Modal Fusion Framework) is an action recognition model that fuses Skeleton (ST-GCN) and RGB (Xception) streams, then applies a Transformer-based late fusion to learn interactions between modalities.
-- Current repo status: ready to run with dummy data for a full pipeline check. Real data loading is intentionally left as TODO in [utils/dataset.py](utils/dataset.py).
+- Repo supports both real data (exported `.npy/.pkl`) and dummy data (quick pipeline checks).
 
 **Architecture**
 - Skeleton stream: ST-GCN extracts spatio-temporal features and returns
@@ -26,20 +26,24 @@ pip install -r requirements.txt
 ```
 2) Optional: verify PyTorch CUDA availability:
 ```
-python - <<"PY"
-import torch; print("CUDA:", torch.cuda.is_available())
-PY
+python -c "import torch; print('CUDA:', torch.cuda.is_available())"
 ```
 
-**Data Structure (Guidance)**
-- Data folders (not used yet because real loader is pending):
-	- [data/raw_skeleton](data/raw_skeleton)
-	- [data/raw_video](data/raw_video)
-- Important defaults in [utils/dataset.py](utils/dataset.py):
-	- Fixed frames: 32 (`num_frames=32`).
-	- RGB image size: 299×299 (Xception-friendly).
-	- Joints: NTU=25, UTD=20.
-- Current status: only `is_dummy=True` is supported, which generates random data for pipeline testing and quick benchmarking.
+**Data Structure**
+
+The dataset loader [utils/dataset.py](utils/dataset.py) expects exported files under `./data`:
+- `train_data.npy` + `train_label.pkl`: training pool
+- `test_data.npy` + `test_label.pkl`: held-out test set
+- `images/`: RGB frames (one image per sample name from the `.pkl`)
+
+During training, validation is a deterministic split from the training pool:
+- `mode='train'` and `mode='val'` both read from `train_*` and split using `--val_ratio` + `--split_seed`.
+- `mode='test'` reads from `test_*` (and falls back to legacy `val_*` if present).
+
+Important defaults in [utils/dataset.py](utils/dataset.py):
+- Fixed frames: 32 (`num_frames=32`).
+- RGB image size: 299×299 (Xception-friendly).
+- Joints: NTU=25, UTD=20.
 
 ## How to Run
 
@@ -51,45 +55,47 @@ python test_pipeline.py
 **Expected output:** prints skeleton shape, RGB shape, and model output shape.
 
 ### 2. Training
+Training is stage-wise (each stage saves its own best checkpoint):
+- `skeleton`: train skeleton stream
+- `rgb`: train RGB stream (optionally warm-start from skeleton)
+- `fusion`: train final fusion head (warm-start from skeleton + rgb if available)
 
-#### Train on NTU Dataset (60 classes):
+Examples:
 ```
-python train.py --dataset ntu --epochs 10 --batch_size 4 --is_dummy
-```
+# 1) Skeleton stage
+python train.py --dataset ntu --stage skeleton --epochs 30 --batch_size 8
 
-#### Train on UTD Dataset (27 classes):
-```
-python train.py --dataset utd --epochs 10 --batch_size 4 --is_dummy
-```
+# 2) RGB stage
+python train.py --dataset ntu --stage rgb --epochs 30 --batch_size 8
 
-#### Key Training Options:
-- `--dataset`: `ntu` or `utd` (default: `ntu`)
-- `--epochs`: number of training epochs (default: 10)
-- `--batch_size`: batch size (default: 4)
-- `--lr`: learning rate (default: 1e-4)
-- `--is_dummy`: use dummy data for testing (default: False, but required for now)
-
-**Example with custom hyperparameters:**
-```
-python train.py --dataset ntu --epochs 20 --batch_size 8 --lr 5e-5 --is_dummy
+# 3) Fusion stage
+python train.py --dataset ntu --stage fusion --epochs 30 --batch_size 8
 ```
 
-**Outputs:**
-- Best weights: `best_model_ntu.pth` or `best_model_utd.pth`
-- Training history plot: `history_ntu.png` or `history_utd.png`
+Key training options:
+- `--dataset`: dataset name (default: `ntu`)
+- `--stage`: `skeleton` | `rgb` | `fusion` (default: `fusion`)
+- `--epochs`, `--batch_size`, `--lr`
+- `--val_ratio`: validation ratio split from train pool (default: `0.1`)
+- `--split_seed`: seed for deterministic train/val split (default: `42`)
+
+Outputs:
+- Best weights: `best_{stage}_{dataset}.pth`
+- Training history plot: `history_{stage}_{dataset}.png`
 
 ### 3. Evaluation
 
 Evaluate a trained checkpoint:
 ```
-python test.py --dataset ntu --batch_size 4 --is_dummy
-python test.py --dataset utd --batch_size 4 --is_dummy
+python test.py --dataset ntu --stage fusion --batch_size 4
+python test.py --dataset utd --stage fusion --batch_size 4
 ```
 
 #### Key Evaluation Options:
 - `--dataset`: `ntu` or `utd` (default: `ntu`)
+- `--stage`: which checkpoint to evaluate (`skeleton` | `rgb` | `fusion`)
 - `--batch_size`: batch size (default: 4)
-- `--is_dummy`: use dummy data (default: False, but required for now)
+- `--is_dummy`: use dummy data (accuracy will be random)
 
 **Note:** With `is_dummy=True`, accuracy will be random (for pipeline testing only). When real data is integrated, the script will also generate `confusion_matrix_{dataset}.png`.
 
@@ -99,10 +105,12 @@ python test.py --dataset utd --batch_size 4 --is_dummy
 python test_pipeline.py
 
 # 2. Train the model
-python train.py --dataset ntu --epochs 10 --is_dummy
+python train.py --dataset ntu --stage skeleton
+python train.py --dataset ntu --stage rgb
+python train.py --dataset ntu --stage fusion
 
-# 3. Evaluate the model
-python test.py --dataset ntu --is_dummy
+# 3. Evaluate the model on held-out test set
+python test.py --dataset ntu --stage fusion
 ```
 
 **Additional Information**
@@ -120,19 +128,18 @@ python -c "import torch; print('PyTorch version:', torch.__version__); print('CU
 - `MMFFDataset` returns a 4-tuple: `(skeleton_feat, rgb_img, 0, label)` where the 3rd element is a placeholder.
 
 **Outputs**
-- Best weights: `best_model_{dataset}.pth`.
-- Training plots: `history_{dataset}.png`.
+- Best weights: `best_{stage}_{dataset}.pth`.
+- Training plots: `history_{stage}_{dataset}.png`.
 - Confusion matrix (when not using dummy): `confusion_matrix_{dataset}.png`.
 
 **Troubleshooting**
 - Failing to download `Xception` weights from `timm`:
 	- Ensure Internet on first run; or set `pretrained=False` in [models/backbone.py](models/backbone.py).
 - OOM or memory pressure: reduce `--batch_size` and/or use CPU.
-- `test.py` cannot find weights: run training first to produce `best_model_{dataset}.pth`.
-- `is_dummy=False` is not implemented yet (real data loader pending). Keep `--is_dummy` for now.
+- `test.py` cannot find weights: run training first to produce `best_{stage}_{dataset}.pth`.
+- If your held-out files are named `val_*`, rename to `test_*` or keep them; loader falls back to legacy `val_*` automatically.
 
 **Next Steps (TODO)**
-- Implement real data loader in [utils/dataset.py](utils/dataset.py#L52-L78) (`_get_real_item`) and `__len__`.
 - Add preprocessing (skeleton normalization, RGB resize/crop) in [utils/preprocess.py](utils/preprocess.py) as needed.
 - Potential improvements: deeper Transformer for fusion, RGB augmentations, ST-GCN regularization.
 
