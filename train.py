@@ -56,11 +56,13 @@ def validate(model, loader, criterion, device, stage):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--data_dir', type=str, default='./data', help='Dataset directory containing train_data.pkl/test_data.pkl')
     parser.add_argument('--dataset', type=str, default='ntu')
     parser.add_argument('--stage', type=str, default='fusion', choices=['skeleton', 'rgb', 'fusion'])
     parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--batch_size', type=int, default=8) # Batch nhỏ tốt cho UTD
     parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
     parser.add_argument('--val_ratio', type=float, default=0.1, help='Validation ratio split from training set')
     parser.add_argument('--split_seed', type=int, default=42, help='Random seed for train/val split')
     args = parser.parse_args()
@@ -70,20 +72,26 @@ def main():
     
     # Dataset & Loader
     train_ds = MMFFDataset(
+        root_dir=args.data_dir,
         mode='train',
         is_dummy=False,
         num_classes=NUM_CLASSES,
         dataset=args.dataset,
         val_ratio=args.val_ratio,
         split_seed=args.split_seed,
+        stage=args.stage,
+        num_frames=args.num_frames,
     )
     val_ds = MMFFDataset(
+        root_dir=args.data_dir,
         mode='val',
         is_dummy=False,
         num_classes=NUM_CLASSES,
         dataset=args.dataset,
         val_ratio=args.val_ratio,
         split_seed=args.split_seed,
+        stage=args.stage,
+        num_frames=args.num_frames,
     )
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)

@@ -135,11 +135,13 @@ def get_class_names(dataset: str, num_classes: int):
 def main():
     # --- 1. Cấu hình tham số dòng lệnh ---
     parser = argparse.ArgumentParser(description='Test MMFF Model')
+    parser.add_argument('--data_dir', type=str, default='./data', help='Dataset directory containing train_data.pkl/test_data.pkl')
     parser.add_argument('--dataset', type=str, default='ntu', choices=['ntu', 'utd'], 
                         help='dataset name: ntu or utd')
     parser.add_argument('--stage', type=str, default='fusion', choices=['skeleton', 'rgb', 'fusion'],
                         help="Which stage checkpoint to evaluate: 'skeleton', 'rgb', or 'fusion'")
     parser.add_argument('--batch_size', type=int, default=4)
+    parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
     parser.add_argument('--is_dummy', action='store_true', help='Use dummy data for testing')
     
     args = parser.parse_args()
@@ -177,7 +179,10 @@ def main():
     # is_dummy=True nếu bạn chỉ muốn test code, False nếu chạy thật
     test_dataset = MMFFDataset(mode='test', is_dummy=args.is_dummy, 
                                num_samples=50, num_classes=NUM_CLASSES, 
-                               dataset=args.dataset)
+                               dataset=args.dataset,
+                               stage=args.stage,
+                               num_frames=args.num_frames,
+                               root_dir=args.data_dir)
     
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
     
