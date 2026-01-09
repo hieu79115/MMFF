@@ -5,11 +5,16 @@ from models.backbone import RGBStream_Base
 from models.fusion import FusionTransformer
 
 class MMFF_Net_Advanced(nn.Module):
-    def __init__(self, num_classes=60, dataset='ntu'):
+    def __init__(self, num_classes=60, dataset='ntu', edge_importance_weighting: bool = False):
         super(MMFF_Net_Advanced, self).__init__()
         
         # 1. Nhánh Skeleton
-        self.skel_encoder = SkeletonStream_STGCN(in_channels=3, num_class=num_classes, dataset=dataset)
+        self.skel_encoder = SkeletonStream_STGCN(
+            in_channels=3,
+            num_class=num_classes,
+            dataset=dataset,
+            edge_importance_weighting=edge_importance_weighting,
+        )
         # Đầu ra phụ cho Skeleton (để train riêng)
         self.skel_head = nn.Linear(256, num_classes)
         

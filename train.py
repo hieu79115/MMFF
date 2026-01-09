@@ -62,6 +62,7 @@ def main():
     parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--batch_size', type=int, default=8) # Batch nhỏ tốt cho UTD
     parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
     parser.add_argument('--val_ratio', type=float, default=0.1, help='Validation ratio split from training set')
     parser.add_argument('--split_seed', type=int, default=42, help='Random seed for train/val split')
@@ -96,7 +97,11 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
     
-    model = MMFF_Net_Advanced(num_classes=NUM_CLASSES, dataset=args.dataset)
+    model = MMFF_Net_Advanced(
+        num_classes=NUM_CLASSES,
+        dataset=args.dataset,
+        edge_importance_weighting=bool(args.edge_importance),
+    )
     model.to(DEVICE)
 
     # --- LOGIC LOAD WEIGHTS THEO GIAI ĐOẠN ---

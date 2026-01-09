@@ -80,6 +80,15 @@ class SkeletonStream_STGCN(nn.Module):
             ST_GCN_Block(256, 256, kernel_size, 1),
         ))
 
+        # Edge Importance Weighting (ST-GCN paper): learnable mask for adjacency A per layer.
+        self.edge_importance_weighting = bool(edge_importance_weighting)
+        if self.edge_importance_weighting:
+            self.edge_importance = nn.ParameterList(
+                [nn.Parameter(torch.ones_like(self.A)) for _ in self.st_gcn_networks]
+            )
+        else:
+            self.edge_importance = None
+
         # Output feature dim (để nối với RGB stream)
         self.out_dim = 256
 
@@ -94,8 +103,12 @@ class SkeletonStream_STGCN(nn.Module):
         x = x.view(N, V, C, T).permute(0, 2, 3, 1).contiguous().view(N, C, T, V)
 
         # Chạy qua các lớp ST-GCN
-        for gcn in self.st_gcn_networks:
-            x = gcn(x, self.A)
+        if self.edge_importance_weighting and self.edge_importance is not None:
+            for gcn, importance in zip(self.st_gcn_networks, self.edge_importance):
+                x = gcn(x, self.A * importance)
+        else:
+            for gcn in self.st_gcn_networks:
+                x = gcn(x, self.A)
 
         # x lúc này có shape (N, 256, T, V) -> Đây là Feature Map cần cho Attention
         feature_map = x 

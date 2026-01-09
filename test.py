@@ -142,6 +142,7 @@ def main():
                         help="Which stage checkpoint to evaluate: 'skeleton', 'rgb', or 'fusion'")
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
+    parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
     parser.add_argument('--is_dummy', action='store_true', help='Use dummy data for testing')
     
     args = parser.parse_args()
@@ -187,11 +188,20 @@ def main():
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
     
     # --- 3. Khởi tạo Model ---
-    model = MMFF_Net_Advanced(num_classes=NUM_CLASSES, dataset=args.dataset)
+    model = MMFF_Net_Advanced(
+        num_classes=NUM_CLASSES,
+        dataset=args.dataset,
+        edge_importance_weighting=bool(args.edge_importance),
+    )
     
     # Load weights
     if os.path.exists(MODEL_PATH):
-        model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
+        state = torch.load(MODEL_PATH, map_location=DEVICE)
+        incompatible = model.load_state_dict(state, strict=False)
+        if getattr(incompatible, 'missing_keys', None):
+            print(f"WARNING: Missing keys when loading checkpoint: {len(incompatible.missing_keys)}")
+        if getattr(incompatible, 'unexpected_keys', None):
+            print(f"WARNING: Unexpected keys when loading checkpoint: {len(incompatible.unexpected_keys)}")
         print(f"Loaded weights from {MODEL_PATH}")
     else:
         print(f"ERROR: Weight file {MODEL_PATH} not found. Train first!")
