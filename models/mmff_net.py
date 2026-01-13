@@ -25,7 +25,14 @@ class MMFF_Net_Advanced(nn.Module):
         self.rgb_head = nn.Linear(2048, num_classes)
         
         # 3. Fusion
-        self.fusion_head = FusionTransformer(skel_dim=256, rgb_dim=2048, num_classes=num_classes)
+        self.fusion_head = FusionTransformer(
+            skel_dim=256, 
+            rgb_dim=2048, 
+            embed_dim=512,      # Updated from 256
+            num_heads=8,        # Updated from 4
+            num_classes=num_classes,
+            dropout=0.3         # Updated from 0.5
+        )
 
     def forward(self, skel_input, rgb_input, stage='fusion'):
         """
