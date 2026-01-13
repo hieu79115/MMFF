@@ -52,7 +52,7 @@ class ST_GCN_Block(nn.Module):
         return self.relu(x)
 
 class SkeletonStream_STGCN(nn.Module):
-    def __init__(self, in_channels=3, num_class=60, dataset='ntu', edge_importance_weighting=True, **kwargs):
+    def __init__(self, in_channels=3, num_class=60, dataset='ntu', edge_importance_weighting=True, dropout: float = 0.0, **kwargs):
         super().__init__()
         # Load Graph NTU-RGBD
         self.graph = Graph(dataset=dataset)
@@ -69,15 +69,15 @@ class SkeletonStream_STGCN(nn.Module):
         
         # Các layer ST-GCN nối tiếp nhau
         self.st_gcn_networks = nn.ModuleList((
-            ST_GCN_Block(in_channels, 64, kernel_size, 1, residual=False),
-            ST_GCN_Block(64, 64, kernel_size, 1),
-            ST_GCN_Block(64, 64, kernel_size, 1),
-            ST_GCN_Block(64, 128, kernel_size, 2), # Stride 2 để giảm chiều thời gian
-            ST_GCN_Block(128, 128, kernel_size, 1),
-            ST_GCN_Block(128, 128, kernel_size, 1),
-            ST_GCN_Block(128, 256, kernel_size, 2),
-            ST_GCN_Block(256, 256, kernel_size, 1),
-            ST_GCN_Block(256, 256, kernel_size, 1),
+            ST_GCN_Block(in_channels, 64, kernel_size, 1, dropout=dropout, residual=False),
+            ST_GCN_Block(64, 64, kernel_size, 1, dropout=dropout),
+            ST_GCN_Block(64, 64, kernel_size, 1, dropout=dropout),
+            ST_GCN_Block(64, 128, kernel_size, 2, dropout=dropout), # Stride 2 để giảm chiều thời gian
+            ST_GCN_Block(128, 128, kernel_size, 1, dropout=dropout),
+            ST_GCN_Block(128, 128, kernel_size, 1, dropout=dropout),
+            ST_GCN_Block(128, 256, kernel_size, 2, dropout=dropout),
+            ST_GCN_Block(256, 256, kernel_size, 1, dropout=dropout),
+            ST_GCN_Block(256, 256, kernel_size, 1, dropout=dropout),
         ))
 
         # Edge Importance Weighting (ST-GCN paper): learnable mask for adjacency A per layer.

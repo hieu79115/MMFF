@@ -143,6 +143,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
     parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
+    parser.add_argument('--dropout', type=float, default=0.0, help='Dropout for ST-GCN blocks (kept for run metadata)')
     parser.add_argument('--is_dummy', action='store_true', help='Use dummy data for testing')
     
     args = parser.parse_args()
@@ -192,6 +193,7 @@ def main():
         num_classes=NUM_CLASSES,
         dataset=args.dataset,
         edge_importance_weighting=bool(args.edge_importance),
+        stgcn_dropout=float(args.dropout),
     )
     
     # Load weights
@@ -252,7 +254,12 @@ def main():
     else:
         # Chỉ vẽ Confusion Matrix khi chạy dữ liệu thật hoặc muốn test
         cm = confusion_matrix(all_labels, all_preds, labels=list(range(NUM_CLASSES)))
-        plot_confusion_matrix(cm, class_names, f'confusion_matrix_{args.dataset}.png')
+        dropout_tag = str(float(args.dropout)).replace('.', 'p')
+        plot_confusion_matrix(
+            cm,
+            class_names,
+            f'confusion_matrix_{args.stage}_{args.dataset}_T{args.num_frames}_ei{args.edge_importance}_do{dropout_tag}.png'
+        )
 
 if __name__ == "__main__":
     main()

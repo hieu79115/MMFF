@@ -63,6 +63,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=8) # Batch nhỏ tốt cho UTD
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
+    parser.add_argument('--dropout', type=float, default=0.0, help='Dropout for ST-GCN blocks (0.0-0.8 typical)')
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
     parser.add_argument('--val_ratio', type=float, default=0.1, help='Validation ratio split from training set')
     parser.add_argument('--split_seed', type=int, default=42, help='Random seed for train/val split')
@@ -101,6 +102,7 @@ def main():
         num_classes=NUM_CLASSES,
         dataset=args.dataset,
         edge_importance_weighting=bool(args.edge_importance),
+        stgcn_dropout=float(args.dropout),
     )
     model.to(DEVICE)
 
@@ -153,7 +155,12 @@ def main():
             torch.save(model.state_dict(), save_name)
             print(f"Saved {save_name}!")
 
-    plot_history(history, f'history_{args.stage}_{args.dataset}.png')
+    # Include stage in filename (and extra knobs to avoid overwriting across experiments)
+    dropout_tag = str(float(args.dropout)).replace('.', 'p')
+    plot_history(
+        history,
+        f'history_{args.stage}_{args.dataset}_T{args.num_frames}_ei{args.edge_importance}_do{dropout_tag}.png'
+    )
 
 if __name__ == "__main__":
     main()
