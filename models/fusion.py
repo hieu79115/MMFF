@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class FusionTransformer(nn.Module):
-    def __init__(self, skel_dim, rgb_dim, embed_dim=256, num_heads=4, num_classes=60, dropout=0.5):
+    def __init__(self, skel_dim, rgb_dim, embed_dim=512, num_heads=8, num_classes=60, dropout=0.3):
         super(FusionTransformer, self).__init__()
         
         self.skel_proj = nn.Linear(skel_dim, embed_dim)
@@ -10,15 +10,22 @@ class FusionTransformer(nn.Module):
         
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         
-        # Thêm Dropout vào Transformer
-        encoder_layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, 
-                                                   batch_first=True, dropout=dropout)
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=1)
+        # Upgrade: 3 layers with larger FFN (dim_feedforward = embed_dim * 4)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=embed_dim, 
+            nhead=num_heads,
+            dim_feedforward=embed_dim * 4,  # 2048 for embed_dim=512
+            batch_first=True, 
+            dropout=dropout
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=3)
         
-        # Thêm Dropout trước lớp phân loại cuối cùng
+        # Deeper MLP head with GELU activation and intermediate layer
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(embed_dim),
-            nn.Dropout(dropout),  # Quan trọng: Dropout mạnh (0.5)
+            nn.Linear(embed_dim, embed_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
             nn.Linear(embed_dim, num_classes)
         )
 
