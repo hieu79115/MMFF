@@ -78,6 +78,7 @@ class SkeletonStream_STGCN(nn.Module):
             ST_GCN_Block(128, 256, kernel_size, 2, dropout=dropout),
             ST_GCN_Block(256, 256, kernel_size, 1, dropout=dropout),
             ST_GCN_Block(256, 256, kernel_size, 1, dropout=dropout),
+            ST_GCN_Block(256, 256, kernel_size, 1, dropout=dropout),  # New 6th layer at 256 channels
         ))
 
         # Edge Importance Weighting (ST-GCN paper): learnable mask for adjacency A per layer.

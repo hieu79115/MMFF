@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
 from tqdm import tqdm
 import argparse
 import os
@@ -9,6 +10,8 @@ import matplotlib.pyplot as plt
 
 from utils.dataset import MMFFDataset
 from models.mmff_net import MMFF_Net_Advanced
+from config import Config
+from utils.losses import get_criterion
 
 def plot_history(history, save_path):
     plt.figure(figsize=(12, 5))
@@ -59,15 +62,21 @@ def main():
     parser.add_argument('--data_dir', type=str, default='./data', help='Dataset directory containing train_data.pkl/test_data.pkl')
     parser.add_argument('--dataset', type=str, default='ntu')
     parser.add_argument('--stage', type=str, default='fusion', choices=['skeleton', 'rgb', 'fusion'])
-    parser.add_argument('--epochs', type=int, default=30)
-    parser.add_argument('--batch_size', type=int, default=8) # Batch nhỏ tốt cho UTD
-    parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--epochs', type=int, default=None, help='Epochs (uses config default if not specified)')
+    parser.add_argument('--batch_size', type=int, default=Config.BATCH_SIZE)
+    parser.add_argument('--lr', type=float, default=None, help='Learning rate (uses config default per stage)')
     parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
     parser.add_argument('--dropout', type=float, default=0.0, help='Dropout for ST-GCN blocks (0.0-0.8 typical)')
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
     parser.add_argument('--val_ratio', type=float, default=0.1, help='Validation ratio split from training set')
     parser.add_argument('--split_seed', type=int, default=42, help='Random seed for train/val split')
     args = parser.parse_args()
+    
+    # Set defaults from config if not specified
+    if args.epochs is None:
+        args.epochs = Config.get_epochs(args.stage)
+    if args.lr is None:
+        args.lr = Config.get_lr(args.stage)
 
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     NUM_CLASSES = 60 if args.dataset == 'ntu' else 27
@@ -112,6 +121,10 @@ def main():
         if os.path.exists(f'best_skeleton_{args.dataset}.pth'):
             print(">> Loading best SKELETON weights for RGB training...")
             model.load_state_dict(torch.load(f'best_skeleton_{args.dataset}.pth'), strict=False)
+        # Initially freeze backbone for gradual unfreezing
+        for param in model.rgb_encoder.backbone.parameters():
+            param.requires_grad = False
+        print("RGB backbone frozen initially (will unfreeze at epoch {})".format(Config.RGB_UNFREEZE_EPOCH))
     
     elif args.stage == 'fusion':
         # Load cả 2 thằng trước khi train tổng
@@ -122,25 +135,64 @@ def main():
             print(">> Loading best RGB weights...")
             model.load_state_dict(torch.load(f'best_rgb_{args.dataset}.pth'), strict=False)
     
-    # Optimizer: Thêm Weight Decay để chống Overfit
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-3)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1) # Label Smoothing giúp ổn định
+    # Optimizer: Use AdamW with weight decay
+    optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=Config.WEIGHT_DECAY)
+    
+    # Learning rate schedulers
+    # Warmup scheduler
+    def warmup_lambda(epoch):
+        if epoch < Config.WARMUP_EPOCHS:
+            return (epoch + 1) / Config.WARMUP_EPOCHS
+        return 1.0
+    
+    warmup_scheduler = LambdaLR(optimizer, lr_lambda=warmup_lambda)
+    
+    # Main scheduler (cosine annealing after warmup)
+    main_scheduler = CosineAnnealingLR(
+        optimizer, 
+        T_max=args.epochs - Config.WARMUP_EPOCHS, 
+        eta_min=Config.LR_MIN
+    )
+    
+    # Loss criterion with label smoothing or focal loss
+    criterion = get_criterion(
+        use_focal=Config.USE_FOCAL_LOSS,
+        label_smoothing=Config.LABEL_SMOOTHING,
+        focal_alpha=Config.FOCAL_ALPHA,
+        focal_gamma=Config.FOCAL_GAMMA
+    )
 
     best_acc = 0.0
     history = {'train_acc':[], 'val_acc':[], 'train_loss':[], 'val_loss':[]}
     
     print(f"\n=== START TRAINING STAGE: {args.stage.upper()} ===")
+    print(f"Epochs: {args.epochs}, Initial LR: {args.lr}, Batch size: {args.batch_size}")
+    print(f"Loss function: {'Focal Loss' if Config.USE_FOCAL_LOSS else 'CrossEntropy with Label Smoothing'}")
     
     for epoch in range(args.epochs):
+        # Gradual unfreezing for RGB stage
+        if args.stage == 'rgb' and epoch == Config.RGB_UNFREEZE_EPOCH:
+            print(f"\n>>> Unfreezing RGB backbone at epoch {epoch+1}...")
+            for param in model.rgb_encoder.backbone.parameters():
+                param.requires_grad = True
+            # Reduce LR when unfreezing
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = param_group['lr'] * Config.RGB_UNFREEZE_LR_FACTOR
+            print(f"Learning rate reduced to: {optimizer.param_groups[0]['lr']:.6f}")
+        
         train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, DEVICE, args.stage)
         val_loss, val_acc = validate(model, val_loader, criterion, DEVICE, args.stage)
         
-        scheduler.step(val_acc)
+        # Step schedulers
+        if epoch < Config.WARMUP_EPOCHS:
+            warmup_scheduler.step()
+        else:
+            main_scheduler.step()
+        
         current_lr = optimizer.param_groups[0]['lr']
         
         print(
-            f"Ep {epoch+1} | LR: {current_lr:.6f} | "
+            f"Ep {epoch+1}/{args.epochs} | LR: {current_lr:.6f} | "
             f"Train: {train_acc:.2f}% (loss {train_loss:.4f}) | "
             f"Val: {val_acc:.2f}% (loss {val_loss:.4f})"
         )
