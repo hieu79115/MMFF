@@ -135,7 +135,7 @@ def print_model_stats(model, dataset='ntu', num_frames=32, stage='fusion',
         print(f"Num Joints:     {config['num_joints']}")
         print(f"Num Frames:     {num_frames}")
         print(f"RGB Size:       {img_size}x{img_size}")
-        print(f"Device:         {device.upper()}")
+        print(f"Device:         {str(device).upper()}")
         print("-"*70)
     
     # 1. Đếm Parameters
