@@ -12,6 +12,7 @@ from utils.dataset import MMFFDataset
 from models.mmff_net import MMFF_Net_Advanced
 from config import Config
 from utils.losses import get_criterion
+from utils.model_stats import print_model_stats
 
 def plot_history(history, save_path):
     plt.figure(figsize=(12, 5))
@@ -58,12 +59,12 @@ def validate(model, loader, criterion, device, stage):
     return total_loss/len(loader), 100.*correct/total
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default='./data', help='Dataset directory containing train_data.pkl/test_data.pkl')
+    parser = argparse. ArgumentParser()
+    parser.add_argument('--data_dir', type=str, default='./data', help='Dataset directory containing train_data. pkl/test_data.pkl')
     parser.add_argument('--dataset', type=str, default='ntu')
     parser.add_argument('--stage', type=str, default='fusion', choices=['skeleton', 'rgb', 'fusion'])
     parser.add_argument('--epochs', type=int, default=None, help='Epochs (uses config default if not specified)')
-    parser.add_argument('--batch_size', type=int, default=Config.BATCH_SIZE)
+    parser.add_argument('--batch_size', type=int, default=Config. BATCH_SIZE)
     parser.add_argument('--lr', type=float, default=None, help='Learning rate (uses config default per stage)')
     parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
     parser.add_argument('--dropout', type=float, default=0.0, help='Dropout for ST-GCN blocks (0.0-0.8 typical)')
@@ -76,7 +77,7 @@ def main():
     if args.epochs is None:
         args.epochs = Config.get_epochs(args.stage)
     if args.lr is None:
-        args.lr = Config.get_lr(args.stage)
+        args.lr = Config.get_lr(args. stage)
 
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     NUM_CLASSES = 60 if args.dataset == 'ntu' else 27
@@ -126,17 +127,17 @@ def main():
             param.requires_grad = False
         print("RGB backbone frozen initially (will unfreeze at epoch {})".format(Config.RGB_UNFREEZE_EPOCH))
     
-    elif args.stage == 'fusion':
+    elif args.stage == 'fusion': 
         # Load cả 2 thằng trước khi train tổng
-        if os.path.exists(f'best_skeleton_{args.dataset}.pth'):
+        if os.path.exists(f'best_skeleton_{args. dataset}.pth'):
             print(">> Loading best SKELETON weights...")
-            model.load_state_dict(torch.load(f'best_skeleton_{args.dataset}.pth'), strict=False)
-        if os.path.exists(f'best_rgb_{args.dataset}.pth'):
+            model.load_state_dict(torch.load(f'best_skeleton_{args.dataset}. pth'), strict=False)
+        if os.path.exists(f'best_rgb_{args.dataset}. pth'):
             print(">> Loading best RGB weights...")
             model.load_state_dict(torch.load(f'best_rgb_{args.dataset}.pth'), strict=False)
     
-    # Optimizer: Use AdamW with weight decay
-    optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=Config.WEIGHT_DECAY)
+    # Optimizer:  Use AdamW with weight decay
+    optimizer = optim. AdamW(model.parameters(), lr=args.lr, weight_decay=Config.WEIGHT_DECAY)
     
     # Learning rate schedulers
     # Warmup scheduler
@@ -163,22 +164,22 @@ def main():
     )
 
     best_acc = 0.0
-    history = {'train_acc':[], 'val_acc':[], 'train_loss':[], 'val_loss':[]}
+    history = {'train_acc': [], 'val_acc':[], 'train_loss':[], 'val_loss':[]}
     
-    print(f"\n=== START TRAINING STAGE: {args.stage.upper()} ===")
+    print(f"\n=== START TRAINING STAGE: {args.stage. upper()} ===")
     print(f"Epochs: {args.epochs}, Initial LR: {args.lr}, Batch size: {args.batch_size}")
     print(f"Loss function: {'Focal Loss' if Config.USE_FOCAL_LOSS else 'CrossEntropy with Label Smoothing'}")
     
-    for epoch in range(args.epochs):
+    for epoch in range(args. epochs):
         # Gradual unfreezing for RGB stage
         if args.stage == 'rgb' and epoch == Config.RGB_UNFREEZE_EPOCH:
             print(f"\n>>> Unfreezing RGB backbone at epoch {epoch+1}...")
-            for param in model.rgb_encoder.backbone.parameters():
+            for param in model. rgb_encoder.backbone.parameters():
                 param.requires_grad = True
             # Reduce LR when unfreezing
             for param_group in optimizer.param_groups:
                 param_group['lr'] = param_group['lr'] * Config.RGB_UNFREEZE_LR_FACTOR
-            print(f"Learning rate reduced to: {optimizer.param_groups[0]['lr']:.6f}")
+            print(f"Learning rate reduced to:  {optimizer.param_groups[0]['lr']:. 6f}")
         
         train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, DEVICE, args.stage)
         val_loss, val_acc = validate(model, val_loader, criterion, DEVICE, args.stage)
@@ -193,17 +194,17 @@ def main():
         
         print(
             f"Ep {epoch+1}/{args.epochs} | LR: {current_lr:.6f} | "
-            f"Train: {train_acc:.2f}% (loss {train_loss:.4f}) | "
+            f"Train:  {train_acc:.2f}% (loss {train_loss:.4f}) | "
             f"Val: {val_acc:.2f}% (loss {val_loss:.4f})"
         )
         
         history['train_acc'].append(train_acc); history['val_acc'].append(val_acc)
-        history['train_loss'].append(train_loss); history['val_loss'].append(val_loss)
+        history['train_loss'].append(train_loss); history['val_loss']. append(val_loss)
         
-        if val_acc > best_acc:
+        if val_acc > best_acc: 
             best_acc = val_acc
             # Lưu tên file theo stage
-            save_name = f"best_{args.stage}_{args.dataset}.pth"
+            save_name = f"best_{args.stage}_{args.dataset}. pth"
             torch.save(model.state_dict(), save_name)
             print(f"Saved {save_name}!")
 
@@ -211,8 +212,28 @@ def main():
     dropout_tag = str(float(args.dropout)).replace('.', 'p')
     plot_history(
         history,
-        f'history_{args.stage}_{args.dataset}_T{args.num_frames}_ei{args.edge_importance}_do{dropout_tag}.png'
+        f'history_{args.stage}_{args. dataset}_T{args.num_frames}_ei{args.edge_importance}_do{dropout_tag}.png'
     )
 
-if __name__ == "__main__":
+    print("\n" + "="*35)
+    print("TRAINING COMPLETED!  Printing Model Statistics...")
+    print("="*35)
+    
+    # Load model đã train tốt nhất
+    best_checkpoint = f"best_{args.stage}_{args.dataset}.pth"
+    if os.path.exists(best_checkpoint):
+        print(f"\nLoading best checkpoint: {best_checkpoint}")
+        model.load_state_dict(torch.load(best_checkpoint, map_location=DEVICE))
+    
+    print_model_stats(
+        model=model,
+        dataset=args. dataset,
+        num_frames=args.num_frames,
+        stage=args.stage,
+        device=DEVICE,
+        img_size=299, 
+        verbose=True
+    )
+
+if __name__ == "__main__": 
     main()
