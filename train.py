@@ -131,7 +131,7 @@ def main():
         # Load cả 2 thằng trước khi train tổng
         if os.path.exists(f'best_skeleton_{args. dataset}.pth'):
             print(">> Loading best SKELETON weights...")
-            model.load_state_dict(torch.load(f'best_skeleton_{args.dataset}. pth'), strict=False)
+            model.load_state_dict(torch.load(f'best_skeleton_{args.dataset}.pth'), strict=False)
         if os.path.exists(f'best_rgb_{args.dataset}. pth'):
             print(">> Loading best RGB weights...")
             model.load_state_dict(torch.load(f'best_rgb_{args.dataset}.pth'), strict=False)
