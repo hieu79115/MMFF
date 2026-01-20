@@ -54,7 +54,7 @@ def count_parameters(model):
         tuple: (total_params, trainable_params, non_trainable_params)
     """
     total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p. numel() for p in model.parameters() if p.requires_grad)
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     non_trainable_params = total_params - trainable_params
     
     return total_params, trainable_params, non_trainable_params
@@ -129,13 +129,13 @@ def print_model_stats(model, dataset='ntu', num_frames=32, stage='fusion',
         print("\n" + "="*70)
         print(f"MODEL STATISTICS")
         print("="*70)
-        print(f"Dataset:         {config['dataset_name']} ({dataset. upper()})")
-        print(f"Stage:          {stage. upper()}")
+        print(f"Dataset:         {config['dataset_name']} ({dataset.upper()})")
+        print(f"Stage:          {stage.upper()}")
         print(f"Num Classes:    {config['num_classes']}")
         print(f"Num Joints:     {config['num_joints']}")
         print(f"Num Frames:     {num_frames}")
         print(f"RGB Size:       {img_size}x{img_size}")
-        print(f"Device:         {device. upper()}")
+        print(f"Device:         {device.upper()}")
         print("-"*70)
     
     # 1. Đếm Parameters
@@ -151,7 +151,7 @@ def print_model_stats(model, dataset='ntu', num_frames=32, stage='fusion',
     
     if verbose:
         if flops is not None and THOP_AVAILABLE:
-            flops_formatted, params_formatted = clever_format([flops, params_thop], "%. 3f")
+            flops_formatted, params_formatted = clever_format([flops, params_thop], "%.3f")
             print(f"FLOPs:                   {flops_formatted}")
             print(f"Params (from thop):    {params_formatted}")
         else:
@@ -254,7 +254,7 @@ def compare_stages(model_class, dataset='ntu', num_frames=32, device='cuda',
         else:
             flops_str = "N/A"
         
-        print(f"{stage. upper():<12} {total:<18} {trainable:<18} {flops_str:<15}")
+        print(f"{stage.upper():<12} {total:<18} {trainable:<18} {flops_str:<15}")
     
     print("="*70 + "\n")
     
@@ -273,14 +273,14 @@ def save_stats_to_file(stats, filename='model_stats.txt'):
         f.write("="*70 + "\n")
         f.write("MODEL STATISTICS\n")
         f.write("="*70 + "\n")
-        f.write(f"Dataset:        {stats. get('dataset_name', 'N/A')} ({stats.get('dataset', 'N/A').upper()})\n")
+        f.write(f"Dataset:        {stats.get('dataset_name', 'N/A')} ({stats.get('dataset', 'N/A').upper()})\n")
         f.write(f"Stage:          {stats.get('stage', 'N/A').upper()}\n")
         f.write(f"Num Classes:    {stats.get('num_classes', 'N/A')}\n")
         f.write(f"Num Joints:     {stats.get('num_joints', 'N/A')}\n")
         f.write(f"Num Frames:     {stats.get('num_frames', 'N/A')}\n")
         f.write("-"*70 + "\n")
         f.write(f"Total Parameters:      {format_number(stats.get('total_params'))}\n")
-        f.write(f"Trainable Parameters:   {format_number(stats. get('trainable_params'))}\n")
+        f.write(f"Trainable Parameters:   {format_number(stats.get('trainable_params'))}\n")
         f.write(f"Frozen Parameters:     {format_number(stats.get('non_trainable_params'))}\n")
         
         if stats.get('flops') is not None and THOP_AVAILABLE:

@@ -68,7 +68,7 @@ def main():
     NUM_JOINTS = config['num_joints']
     
     print(f"\n Configuration:")
-    print(f"   Dataset: {config['dataset_name']} ({args.dataset. upper()})")
+    print(f"   Dataset: {config['dataset_name']} ({args.dataset.upper()})")
     print(f"   Classes: {NUM_CLASSES}, Joints: {NUM_JOINTS}")
     print(f"   Device: {DEVICE}")
     print(f"   Checkpoint: {args.checkpoint if args.checkpoint else 'None (untrained model)'}")
@@ -87,7 +87,7 @@ def main():
         )
         
         if args.save:
-            output_file = args.output or f'model_stats_compare_{args.dataset}. txt'
+            output_file = args.output or f'model_stats_compare_{args.dataset}.txt'
             # Lưu kết quả so sánh
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write("="*70 + "\n")
@@ -95,7 +95,7 @@ def main():
                 f.write("="*70 + "\n\n")
                 for stage, stats in results.items():
                     f.write(f"\n{'─'*70}\n")
-                    f. write(f"Stage: {stage.upper()}\n")
+                    f.write(f"Stage: {stage.upper()}\n")
                     f.write('─'*70 + "\n")
                     f.write(f"Total Parameters:      {stats['total_params']: ,}\n")
                     f.write(f"Trainable Parameters:  {stats['trainable_params']:,}\n")
@@ -118,12 +118,12 @@ def main():
     )
     
     # Load checkpoint nếu có
-    if args. checkpoint:
+    if args.checkpoint:
         if not os.path.exists(args.checkpoint):
             print(f"Error: Checkpoint file not found: {args.checkpoint}")
             return
         
-        print(f"Loading checkpoint: {args. checkpoint}")
+        print(f"Loading checkpoint: {args.checkpoint}")
         try:
             model.load_state_dict(torch.load(args.checkpoint, map_location=DEVICE))
             print(f"Checkpoint loaded successfully!")
@@ -137,7 +137,7 @@ def main():
     stats = print_model_stats(
         model,
         dataset=args.dataset,
-        num_frames=args. num_frames,
+        num_frames=args.num_frames,
         stage=args.stage,
         device=DEVICE,
         img_size=args.img_size,
@@ -150,7 +150,7 @@ def main():
             output_file = args.output
         else:
             checkpoint_name = os.path.splitext(os.path.basename(args.checkpoint))[0] if args.checkpoint else 'untrained'
-            output_file = f'model_stats_{args.stage}_{args.dataset}_{checkpoint_name}. txt'
+            output_file = f'model_stats_{args.stage}_{args.dataset}_{checkpoint_name}.txt'
         
         save_stats_to_file(stats, output_file)
 
