@@ -27,6 +27,11 @@ DATASET_CONFIG = {
         'num_classes':  27,
         'num_joints': 20,
         'dataset_name': 'UTD-MHAD'
+    },
+    'nw-ucla':  {
+        'num_classes': 10,
+        'num_joints': 21,
+        'dataset_name': 'Northwestern-UCLA'
     }
 }
 
