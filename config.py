@@ -66,8 +66,9 @@ class Config:
     
     # Number of classes for each dataset
     NUM_CLASSES = {
-        'ntu': 60,  # NTU RGB+D dataset (60 action classes)
-        'utd': 27   # UTD-MHAD dataset (27 action classes)
+        'ntu': 60,      # NTU RGB+D dataset (60 action classes)
+        'utd': 27,      # UTD-MHAD dataset (27 action classes)
+        'nw-ucla': 10   # Northwestern-UCLA dataset (10 action classes)
     }
     
     # Data preprocessing parameters

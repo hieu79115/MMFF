@@ -32,6 +32,22 @@ def plot_confusion_matrix(cm, classes, filename):
 
 def get_class_names(dataset: str, num_classes: int):
     dataset = dataset.lower()
+    
+    if dataset == 'nw-ucla':
+        # NW-UCLA (Northwestern-UCLA Multiview Action 3D) - 10 classes
+        return [
+            'pick_up_with_one_hand',
+            'pick_up_with_two_hands',
+            'drop_trash',
+            'walk_around',
+            'sit_down',
+            'stand_up',
+            'donning',
+            'doffing',
+            'throw',
+            'carry',
+        ]
+    
     if dataset == 'utd':
         # UTD-MHAD (27 classes)
         return [
@@ -136,8 +152,8 @@ def main():
     # --- 1. Cấu hình tham số dòng lệnh ---
     parser = argparse.ArgumentParser(description='Test MMFF Model')
     parser.add_argument('--data_dir', type=str, default='./data', help='Dataset directory containing train_data.pkl/test_data.pkl')
-    parser.add_argument('--dataset', type=str, default='ntu', choices=['ntu', 'utd'], 
-                        help='dataset name: ntu or utd')
+    parser.add_argument('--dataset', type=str, default='ntu', choices=['ntu', 'utd', 'nw-ucla'], 
+                        help='dataset name: ntu, utd, or nw-ucla')
     parser.add_argument('--stage', type=str, default='fusion', choices=['skeleton', 'rgb', 'fusion'],
                         help="Which stage checkpoint to evaluate: 'skeleton', 'rgb', or 'fusion'")
     parser.add_argument('--batch_size', type=int, default=4)
@@ -155,10 +171,8 @@ def main():
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Cấu hình số lớp
-    if args.dataset == 'ntu':
-        NUM_CLASSES = 60
-    else:
-        NUM_CLASSES = 27
+    from config import Config
+    NUM_CLASSES = Config.get_num_classes(args.dataset)
         
     # Keep compatibility with both naming schemes:
     # - New (train.py): best_{stage}_{dataset}.pth

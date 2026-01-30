@@ -138,6 +138,7 @@ class MMFFDataset(Dataset):
         self.stage = (stage or 'fusion').lower()
         
         if self.dataset_name == 'utd': self.num_joints = 20
+        elif self.dataset_name == 'nw-ucla': self.num_joints = 21
         else: self.num_joints = 25
 
         # Augmentation cho ảnh RGB (Mạnh hơn)

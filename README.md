@@ -43,7 +43,7 @@ During training, validation is a deterministic split from the training pool:
 Important defaults in [utils/dataset.py](utils/dataset.py):
 - Fixed frames: 32 (`num_frames=32`).
 - RGB image size: 299×299 (Xception-friendly).
-- Joints: NTU=25, UTD=20.
+- Joints: NTU=25, UTD=20, NW-UCLA=21.
 
 ## How to Run
 
@@ -89,10 +89,11 @@ Evaluate a trained checkpoint:
 ```
 python test.py --dataset ntu --stage fusion --batch_size 4
 python test.py --dataset utd --stage fusion --batch_size 4
+python test.py --dataset nw-ucla --stage fusion --batch_size 4
 ```
 
 #### Key Evaluation Options:
-- `--dataset`: `ntu` or `utd` (default: `ntu`)
+- `--dataset`: `ntu`, `utd`, or `nw-ucla` (default: `ntu`)
 - `--stage`: which checkpoint to evaluate (`skeleton` | `rgb` | `fusion`)
 - `--batch_size`: batch size (default: 4)
 - `--is_dummy`: use dummy data (accuracy will be random)
@@ -211,6 +212,13 @@ python train.py --dataset ntu --stage fusion --batch_size 16
 python train.py --dataset utd --stage skeleton --batch_size 8
 python train.py --dataset utd --stage rgb --batch_size 8
 python train.py --dataset utd --stage fusion --batch_size 8
+```
+
+**NW-UCLA (10 classes, 21 joints)**:
+```bash
+python train.py --dataset nw-ucla --stage skeleton --batch_size 16
+python train.py --dataset nw-ucla --stage rgb --batch_size 16
+python train.py --dataset nw-ucla --stage fusion --batch_size 16
 ```
 
 **For systems with limited GPU memory**:
