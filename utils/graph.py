@@ -35,7 +35,7 @@ class Graph:
             # Chuyển index từ 1-based sang 0-based
             self.edge = [(i - 1, j - 1) for (i, j) in neighbor_link] + self_link
         
-         elif self.dataset == 'nw-ucla':
+        elif self.dataset == 'nw-ucla':
             # Cấu hình 21 khớp của NW-UCLA (Northwestern-UCLA dataset)
             # Kinect v1 với 20 khớp cơ bản + 1 khớp bổ sung (hip center computed)
             self.num_node = 21
