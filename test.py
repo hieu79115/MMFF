@@ -152,7 +152,7 @@ def main():
     # --- 1. Cấu hình tham số dòng lệnh ---
     parser = argparse.ArgumentParser(description='Test MMFF Model')
     parser.add_argument('--data_dir', type=str, default='./data', help='Dataset directory containing train_data.pkl/test_data.pkl')
-     parser.add_argument('--dataset', type=str, default='ntu', choices=['ntu', 'utd', 'nw-ucla'], 
+    parser.add_argument('--dataset', type=str, default='ntu', choices=['ntu', 'utd', 'nw-ucla'], 
                         help='dataset name: ntu, utd, or nw-ucla')
     parser.add_argument('--stage', type=str, default='fusion', choices=['skeleton', 'rgb', 'fusion'],
                         help="Which stage checkpoint to evaluate: 'skeleton', 'rgb', or 'fusion'")
