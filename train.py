@@ -80,7 +80,7 @@ def main():
         args.lr = Config.get_lr(args.stage)
 
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    NUM_CLASSES = 60 if args.dataset == 'ntu' else 27
+    NUM_CLASSES = Config.get_num_classes(args.dataset)
     
     # Dataset & Loader
     train_ds = MMFFDataset(

@@ -34,6 +34,28 @@ class Graph:
             ]
             # Chuyển index từ 1-based sang 0-based
             self.edge = [(i - 1, j - 1) for (i, j) in neighbor_link] + self_link
+        
+        elif self.dataset == 'nw-ucla':
+            # Cấu hình 21 khớp của NW-UCLA (Northwestern-UCLA dataset)
+            # Kinect v1 với 20 khớp cơ bản + 1 khớp bổ sung (hip center computed)
+            self.num_node = 21
+            self_link = [(i, i) for i in range(self.num_node)]
+            # Sơ đồ nối khớp của NW-UCLA (21 joints)
+            # Joint indices: 1=hip center, 2=spine, 3=shoulder center, 4=head,
+            # 5=left shoulder, 6=left elbow, 7=left wrist, 8=left hand,
+            # 9=right shoulder, 10=right elbow, 11=right wrist, 12=right hand,
+            # 13=left hip, 14=left knee, 15=left ankle, 16=left foot,
+            # 17=right hip, 18=right knee, 19=right ankle, 20=right foot,
+            # 21=neck (computed joint)
+            neighbor_link = [
+                (1, 2), (2, 3), (3, 4), (3, 21),  # Spine -> shoulder center -> head, and neck
+                (3, 5), (5, 6), (6, 7), (7, 8),    # Left arm
+                (3, 9), (9, 10), (10, 11), (11, 12),  # Right arm
+                (1, 13), (13, 14), (14, 15), (15, 16),  # Left leg
+                (1, 17), (17, 18), (18, 19), (19, 20)   # Right leg
+            ]
+            # Chuyển index từ 1-based sang 0-based
+            self.edge = [(i - 1, j - 1) for (i, j) in neighbor_link] + self_link
         else:
             raise ValueError("Dataset không hỗ trợ")
 

@@ -1,6 +1,10 @@
 **Overview**
 - MMFF (Multi-Modal Fusion Framework) is an action recognition model that fuses Skeleton (ST-GCN) and RGB (Xception) streams, then applies a Transformer-based late fusion to learn interactions between modalities.
 - Repo supports both real data (exported `.npy/.pkl`) and dummy data (quick pipeline checks).
+- **Supported Datasets:**
+  - **NTU RGB+D**: 60 action classes, 25 skeleton joints
+  - **UTD-MHAD**: 27 action classes, 20 skeleton joints
+  - **NW-UCLA**: 10 action classes, 21 skeleton joints (Northwestern-UCLA Multiview Action 3D)
 
 **Architecture**
 - Skeleton stream: ST-GCN extracts spatio-temporal features and returns
@@ -43,7 +47,7 @@ During training, validation is a deterministic split from the training pool:
 Important defaults in [utils/dataset.py](utils/dataset.py):
 - Fixed frames: 32 (`num_frames=32`).
 - RGB image size: 299×299 (Xception-friendly).
-- Joints: NTU=25, UTD=20.
+- Joints: NTU=25, UTD=20, NW-UCLA=21.
 
 ## How to Run
 
@@ -89,10 +93,11 @@ Evaluate a trained checkpoint:
 ```
 python test.py --dataset ntu --stage fusion --batch_size 4
 python test.py --dataset utd --stage fusion --batch_size 4
+python test.py --dataset nw-ucla --stage fusion --batch_size 4
 ```
 
 #### Key Evaluation Options:
-- `--dataset`: `ntu` or `utd` (default: `ntu`)
+- `--dataset`: `ntu`, `utd`, or `nw-ucla` (default: `ntu`)
 - `--stage`: which checkpoint to evaluate (`skeleton` | `rgb` | `fusion`)
 - `--batch_size`: batch size (default: 4)
 - `--is_dummy`: use dummy data (accuracy will be random)
@@ -213,24 +218,16 @@ python train.py --dataset utd --stage rgb --batch_size 8
 python train.py --dataset utd --stage fusion --batch_size 8
 ```
 
+**NW-UCLA (10 classes, 21 joints)**:
+```bash
+python train.py --dataset nw-ucla --stage skeleton --batch_size 16
+python train.py --dataset nw-ucla --stage rgb --batch_size 16
+python train.py --dataset nw-ucla --stage fusion --batch_size 16
+```
+
 **For systems with limited GPU memory**:
 - Reduce `--batch_size` to 4 or 8
 - Model architecture remains unchanged
-
-### Expected Performance Improvements
-
-The upgraded architecture and training strategy provide significant accuracy improvements:
-
-| Improvement | Expected Gain | Rationale |
-|-------------|---------------|-----------|
-| Deeper Transformer (1→3 layers) | +3-4% | Better feature interaction learning |
-| Increased model capacity (embed_dim 256→512) | +2-3% | Higher representation capacity |
-| Enhanced ST-GCN (6 layers at 256) | +1-2% | Deeper skeleton feature extraction |
-| Label smoothing (0.1) | +1-2% | Prevents overconfidence, better generalization |
-| LR scheduling + warmup | +2-3% | Better convergence, avoids local minima |
-| AdamW with weight decay | +1% | Better regularization |
-| Gradual unfreezing (RGB) | +1% | Preserves pretrained knowledge |
-| **Total Expected Improvement** | **+11-16%** | **Target 90%+ achievable** ✅ |
 
 **Note**: Actual improvements depend on dataset quality, split, and training conditions. Results may vary.
 
