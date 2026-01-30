@@ -1,6 +1,10 @@
 **Overview**
 - MMFF (Multi-Modal Fusion Framework) is an action recognition model that fuses Skeleton (ST-GCN) and RGB (Xception) streams, then applies a Transformer-based late fusion to learn interactions between modalities.
 - Repo supports both real data (exported `.npy/.pkl`) and dummy data (quick pipeline checks).
+- **Supported Datasets:**
+  - **NTU RGB+D**: 60 action classes, 25 skeleton joints
+  - **UTD-MHAD**: 27 action classes, 20 skeleton joints
+  - **NW-UCLA**: 10 action classes, 21 skeleton joints (Northwestern-UCLA Multiview Action 3D)
 
 **Architecture**
 - Skeleton stream: ST-GCN extracts spatio-temporal features and returns
@@ -53,6 +57,13 @@ Run the complete pipeline with dummy data to verify setup:
 python test_pipeline.py
 ```
 **Expected output:** prints skeleton shape, RGB shape, and model output shape.
+
+**NW-UCLA Dataset Configuration Test:**
+To verify the NW-UCLA dataset configuration:
+```
+python test_nw_ucla.py
+```
+This script comprehensively tests all components (config, graph, dataset, model) with NW-UCLA.
 
 ### 2. Training
 Training is stage-wise (each stage saves its own best checkpoint):
