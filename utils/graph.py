@@ -36,11 +36,11 @@ class Graph:
             self.edge = [(i - 1, j - 1) for (i, j) in neighbor_link] + self_link
             
         elif self.dataset == 'nw-ucla':
-            # Cấu hình 21 khớp của NW-UCLA (Northwestern-UCLA dataset)
-            # Kinect v1 với 20 khớp cơ bản + 1 khớp bổ sung (hip center computed)
+            # NW-UCLA configuration with 21 joints (Northwestern-UCLA dataset)
+            # Kinect v1 with 20 basic joints + 1 additional joint (neck computed)
             self.num_node = 21
             self_link = [(i, i) for i in range(self.num_node)]
-            # Sơ đồ nối khớp của NW-UCLA (21 joints)
+            # NW-UCLA joint connection diagram (21 joints)
             # Joint indices: 1=hip center, 2=spine, 3=shoulder center, 4=head,
             # 5=left shoulder, 6=left elbow, 7=left wrist, 8=left hand,
             # 9=right shoulder, 10=right elbow, 11=right wrist, 12=right hand,
@@ -54,10 +54,10 @@ class Graph:
                 (1, 13), (13, 14), (14, 15), (15, 16),  # Left leg
                 (1, 17), (17, 18), (18, 19), (19, 20)   # Right leg
             ]
-            # Chuyển index từ 1-based sang 0-based
+            # Convert index from 1-based to 0-based
             self.edge = [(i - 1, j - 1) for (i, j) in neighbor_link] + self_link
         else:
-            raise ValueError("Dataset không hỗ trợ")
+            raise ValueError("Unsupported dataset")
 
     def get_adjacency(self, strategy):
         valid_hop = range(0, self.hop_size + 1, 1)
