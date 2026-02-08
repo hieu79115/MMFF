@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from models.st_gcn import SkeletonStream_STGCN
 from models.backbone import RGBStream_Base
-from models.fusion import FusionTransformer, FusionElementwise
+from models.fusion import FusionTransformer, FusionElementwise, FusionConcat
 
 class MMFF_Net_Advanced(nn.Module):
     def __init__(
@@ -43,7 +43,7 @@ class MMFF_Net_Advanced(nn.Module):
                 num_classes=num_classes,
                 dropout=0.3,
             )
-        elif fusion_mode in {'add', 'mul'}:
+        elif fusion_mode == 'add':
             self.fusion_head = FusionElementwise(
                 skel_dim=256,
                 rgb_dim=2048,
@@ -52,8 +52,16 @@ class MMFF_Net_Advanced(nn.Module):
                 op=fusion_mode,
                 dropout=0.3,
             )
+        elif fusion_mode == 'concat':
+            self.fusion_head = FusionConcat(
+                skel_dim=256,
+                rgb_dim=2048,
+                embed_dim=512,
+                num_classes=num_classes,
+                dropout=0.3,
+            )
         else:
-            raise ValueError("fusion_mode must be one of: 'transformer', 'add', 'mul'")
+            raise ValueError("fusion_mode must be one of: 'transformer', 'add', 'concat'")
 
     def forward(self, skel_input, rgb_input, stage='fusion'):
         """
