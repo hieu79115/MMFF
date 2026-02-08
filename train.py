@@ -14,6 +14,41 @@ from config import Config
 from utils.losses import get_criterion
 from utils.model_stats import print_model_stats
 
+
+def load_checkpoint_filtered(model, checkpoint_path, device, include_prefixes=None, exclude_prefixes=None):
+    """Load a checkpoint but only apply parameters that exist AND match shape.
+
+    This avoids RuntimeError on size-mismatch when the architecture changes
+    (e.g., swapping fusion head from transformer to concat/add).
+    """
+
+    ckpt = torch.load(checkpoint_path, map_location=device)
+    if isinstance(ckpt, dict) and 'state_dict' in ckpt and isinstance(ckpt['state_dict'], dict):
+        ckpt_state = ckpt['state_dict']
+    else:
+        ckpt_state = ckpt
+
+    model_state = model.state_dict()
+    include_prefixes = tuple(include_prefixes) if include_prefixes else None
+    exclude_prefixes = tuple(exclude_prefixes) if exclude_prefixes else None
+
+    filtered = {}
+    skipped = 0
+    for key, value in ckpt_state.items():
+        if include_prefixes and not key.startswith(include_prefixes):
+            continue
+        if exclude_prefixes and key.startswith(exclude_prefixes):
+            continue
+        if key not in model_state:
+            continue
+        if hasattr(value, 'shape') and hasattr(model_state[key], 'shape') and value.shape != model_state[key].shape:
+            skipped += 1
+            continue
+        filtered[key] = value
+
+    incompatible = model.load_state_dict(filtered, strict=False)
+    return incompatible, skipped
+
 def plot_history(history, save_path):
     plt.figure(figsize=(12, 5))
     plt.subplot(1, 2, 1); plt.plot(history['train_acc'], label='Train'); plt.plot(history['val_acc'], label='Val')
@@ -123,7 +158,14 @@ def main():
         # Load pre-trained Skeleton để hỗ trợ Attention (nhưng không train nó)
         if os.path.exists(f'best_skeleton_{args.dataset}.pth'):
             print(">> Loading best SKELETON weights for RGB training...")
-            model.load_state_dict(torch.load(f'best_skeleton_{args.dataset}.pth'), strict=False)
+            incompatible, skipped = load_checkpoint_filtered(
+                model,
+                f'best_skeleton_{args.dataset}.pth',
+                device=DEVICE,
+                include_prefixes=['skel_encoder.', 'skel_head.'],
+            )
+            if skipped > 0:
+                print(f"   (skipped {skipped} mismatched params from skeleton checkpoint)")
         # Initially freeze backbone for gradual unfreezing
         for param in model.rgb_encoder.backbone.parameters():
             param.requires_grad = False
@@ -133,10 +175,24 @@ def main():
         # Load cả 2 thằng trước khi train tổng
         if os.path.exists(f'best_skeleton_{args.dataset}.pth'):
             print(">> Loading best SKELETON weights...")
-            model.load_state_dict(torch.load(f'best_skeleton_{args.dataset}.pth'), strict=False)
+            incompatible, skipped = load_checkpoint_filtered(
+                model,
+                f'best_skeleton_{args.dataset}.pth',
+                device=DEVICE,
+                include_prefixes=['skel_encoder.', 'skel_head.'],
+            )
+            if skipped > 0:
+                print(f"   (skipped {skipped} mismatched params from skeleton checkpoint)")
         if os.path.exists(f'best_rgb_{args.dataset}.pth'):
             print(">> Loading best RGB weights...")
-            model.load_state_dict(torch.load(f'best_rgb_{args.dataset}.pth'), strict=False)
+            incompatible, skipped = load_checkpoint_filtered(
+                model,
+                f'best_rgb_{args.dataset}.pth',
+                device=DEVICE,
+                include_prefixes=['rgb_encoder.', 'rgb_head.'],
+            )
+            if skipped > 0:
+                print(f"   (skipped {skipped} mismatched params from rgb checkpoint)")
     
     # Optimizer:  Use AdamW with weight decay
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=Config.WEIGHT_DECAY)
