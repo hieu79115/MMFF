@@ -161,6 +161,7 @@ def main():
     parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
     parser.add_argument('--dropout', type=float, default=0.0, help='Dropout for ST-GCN blocks (kept for run metadata)')
     parser.add_argument('--is_dummy', action='store_true', help='Use dummy data for testing')
+    parser.add_argument('--fusion_mode', type=str, default='auto', choices=['auto', 'add', 'concat', 'transformer'], help='Fusion head used in the checkpoint (auto will infer from checkpoint)')
     
     args = parser.parse_args()
 
@@ -202,26 +203,66 @@ def main():
     
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
     
+    def _unwrap_state_dict(ckpt):
+        if isinstance(ckpt, dict) and 'state_dict' in ckpt and isinstance(ckpt['state_dict'], dict):
+            return ckpt['state_dict']
+        return ckpt
+
+    def _infer_fusion_mode_from_state(state_dict) -> str:
+        # Transformer checkpoints contain the transformer encoder params
+        if any(k.startswith('fusion_head.transformer.') for k in state_dict.keys()):
+            return 'transformer'
+        # Concat checkpoints have LN over 2*embed_dim (default embed_dim=512 => 1024)
+        w = state_dict.get('fusion_head.mlp_head.0.weight', None)
+        if hasattr(w, 'shape') and len(w.shape) == 1 and w.shape[0] == 1024:
+            return 'concat'
+        # Otherwise assume add baseline (LN over embed_dim=512)
+        return 'add'
+
+    def _load_filtered(model, state_dict):
+        model_state = model.state_dict()
+        filtered = {}
+        skipped = 0
+        for key, value in state_dict.items():
+            if key not in model_state:
+                continue
+            if hasattr(value, 'shape') and hasattr(model_state[key], 'shape') and value.shape != model_state[key].shape:
+                skipped += 1
+                continue
+            filtered[key] = value
+        incompatible = model.load_state_dict(filtered, strict=False)
+        return incompatible, skipped
+
+    # Load weights
+    if not os.path.exists(MODEL_PATH):
+        print(f"ERROR: Weight file {MODEL_PATH} not found. Train first!")
+        return
+
+    raw_ckpt = torch.load(MODEL_PATH, map_location=DEVICE)
+    state = _unwrap_state_dict(raw_ckpt)
+
+    fusion_mode = args.fusion_mode
+    if fusion_mode == 'auto':
+        fusion_mode = _infer_fusion_mode_from_state(state)
+        print(f">> Inferred fusion_mode from checkpoint: {fusion_mode}")
+
     # --- 3. Khởi tạo Model ---
     model = MMFF_Net_Advanced(
         num_classes=NUM_CLASSES,
         dataset=args.dataset,
         edge_importance_weighting=bool(args.edge_importance),
         stgcn_dropout=float(args.dropout),
+        fusion_mode=fusion_mode,
     )
-    
-    # Load weights
-    if os.path.exists(MODEL_PATH):
-        state = torch.load(MODEL_PATH, map_location=DEVICE)
-        incompatible = model.load_state_dict(state, strict=False)
-        if getattr(incompatible, 'missing_keys', None):
-            print(f"WARNING: Missing keys when loading checkpoint: {len(incompatible.missing_keys)}")
-        if getattr(incompatible, 'unexpected_keys', None):
-            print(f"WARNING: Unexpected keys when loading checkpoint: {len(incompatible.unexpected_keys)}")
-        print(f"Loaded weights from {MODEL_PATH}")
-    else:
-        print(f"ERROR: Weight file {MODEL_PATH} not found. Train first!")
-        return
+
+    incompatible, skipped = _load_filtered(model, state)
+    if skipped > 0:
+        print(f"WARNING: Skipped {skipped} checkpoint params due to shape mismatch")
+    if getattr(incompatible, 'missing_keys', None):
+        print(f"WARNING: Missing keys when loading checkpoint: {len(incompatible.missing_keys)}")
+    if getattr(incompatible, 'unexpected_keys', None):
+        print(f"WARNING: Unexpected keys when loading checkpoint: {len(incompatible.unexpected_keys)}")
+    print(f"Loaded weights from {MODEL_PATH}")
 
     model.to(DEVICE)
     model.eval()
