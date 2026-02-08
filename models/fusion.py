@@ -43,3 +43,43 @@ class FusionTransformer(nn.Module):
         logits = self.mlp_head(cls_out)
         
         return logits
+
+
+class FusionElementwise(nn.Module):
+    def __init__(
+        self,
+        skel_dim: int,
+        rgb_dim: int,
+        embed_dim: int = 512,
+        num_classes: int = 60,
+        op: str = 'add',
+        dropout: float = 0.3,
+    ):
+        super().__init__()
+
+        op = op.lower().strip()
+        if op not in {'add', 'mul'}:
+            raise ValueError(f"FusionElementwise op must be 'add' or 'mul', got: {op}")
+
+        self.op = op
+        self.skel_proj = nn.Linear(skel_dim, embed_dim)
+        self.rgb_proj = nn.Linear(rgb_dim, embed_dim)
+
+        self.mlp_head = nn.Sequential(
+            nn.LayerNorm(embed_dim),
+            nn.Linear(embed_dim, embed_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim, num_classes),
+        )
+
+    def forward(self, f_skel: torch.Tensor, f_rgb: torch.Tensor) -> torch.Tensor:
+        x_skel = self.skel_proj(f_skel)
+        x_rgb = self.rgb_proj(f_rgb)
+
+        if self.op == 'add':
+            fused = x_skel + x_rgb
+        else:
+            fused = x_skel * x_rgb
+
+        return self.mlp_head(fused)

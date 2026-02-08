@@ -2,10 +2,17 @@ import torch
 import torch.nn as nn
 from models.st_gcn import SkeletonStream_STGCN
 from models.backbone import RGBStream_Base
-from models.fusion import FusionTransformer
+from models.fusion import FusionTransformer, FusionElementwise
 
 class MMFF_Net_Advanced(nn.Module):
-    def __init__(self, num_classes=60, dataset='ntu', edge_importance_weighting: bool = False, stgcn_dropout: float = 0.0):
+    def __init__(
+        self,
+        num_classes=60,
+        dataset='ntu',
+        edge_importance_weighting: bool = False,
+        stgcn_dropout: float = 0.0,
+        fusion_mode: str = 'add',
+    ):
         super(MMFF_Net_Advanced, self).__init__()
         
         # 1. Nhánh Skeleton
@@ -25,14 +32,28 @@ class MMFF_Net_Advanced(nn.Module):
         self.rgb_head = nn.Linear(2048, num_classes)
         
         # 3. Fusion
-        self.fusion_head = FusionTransformer(
-            skel_dim=256, 
-            rgb_dim=2048, 
-            embed_dim=512,      # Updated from 256
-            num_heads=8,        # Updated from 4
-            num_classes=num_classes,
-            dropout=0.3         # Updated from 0.5
-        )
+        fusion_mode = fusion_mode.lower().strip()
+        self.fusion_mode = fusion_mode
+        if fusion_mode == 'transformer':
+            self.fusion_head = FusionTransformer(
+                skel_dim=256,
+                rgb_dim=2048,
+                embed_dim=512,
+                num_heads=8,
+                num_classes=num_classes,
+                dropout=0.3,
+            )
+        elif fusion_mode in {'add', 'mul'}:
+            self.fusion_head = FusionElementwise(
+                skel_dim=256,
+                rgb_dim=2048,
+                embed_dim=512,
+                num_classes=num_classes,
+                op=fusion_mode,
+                dropout=0.3,
+            )
+        else:
+            raise ValueError("fusion_mode must be one of: 'transformer', 'add', 'mul'")
 
     def forward(self, skel_input, rgb_input, stage='fusion'):
         """
