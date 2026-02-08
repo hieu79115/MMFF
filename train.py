@@ -118,10 +118,11 @@ def main():
 
     # --- LOGIC LOAD WEIGHTS THEO GIAI ĐOẠN ---
     if args.stage == 'rgb':
-        # Load pre-trained Skeleton để hỗ trợ Attention (nhưng không train nó)
-        if os.path.exists(f'best_skeleton_{args.dataset}.pth'):
-            print(">> Loading best SKELETON weights for RGB training...")
-            model.load_state_dict(torch.load(f'best_skeleton_{args.dataset}.pth'), strict=False)
+        # RGB chạy độc lập (đã loại bỏ Cross-Attention), không cần load Skeleton weights.
+        for param in model.skel_encoder.parameters():
+            param.requires_grad = False
+        for param in model.skel_head.parameters():
+            param.requires_grad = False
         # Initially freeze backbone for gradual unfreezing
         for param in model.rgb_encoder.backbone.parameters():
             param.requires_grad = False

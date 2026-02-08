@@ -20,7 +20,7 @@ class MMFF_Net_Advanced(nn.Module):
         self.skel_head = nn.Linear(256, num_classes)
         
         # 2. Nhánh RGB
-        self.rgb_encoder = RGBStream_Base(skel_channels=256) 
+        self.rgb_encoder = RGBStream_Base()
         # Đầu ra phụ cho RGB (để train riêng)
         self.rgb_head = nn.Linear(2048, num_classes)
         
@@ -44,16 +44,12 @@ class MMFF_Net_Advanced(nn.Module):
             return self.skel_head(skel_vec) # Chỉ trả về kết quả nhánh xương
             
         # --- Stage 2: Train riêng RGB ---
-        # (Vẫn cần chạy Skeleton encoder để lấy Feature Map cho Cross-Attention, nhưng không update weight xương)
         if stage == 'rgb':
-            with torch.no_grad(): # Đóng băng nhánh xương
-                _, skel_map = self.skel_encoder(skel_input)
-            
-            rgb_vec = self.rgb_encoder(rgb_input, skel_map)
+            rgb_vec = self.rgb_encoder(rgb_input)
             return self.rgb_head(rgb_vec) # Chỉ trả về kết quả nhánh RGB
 
         # --- Stage 3: Fusion (Chạy cả 2) ---
-        skel_vec, skel_map = self.skel_encoder(skel_input) 
-        rgb_vec = self.rgb_encoder(rgb_input, skel_map)
+        skel_vec, _ = self.skel_encoder(skel_input)
+        rgb_vec = self.rgb_encoder(rgb_input)
         logits = self.fusion_head(skel_vec, rgb_vec)
         return logits
