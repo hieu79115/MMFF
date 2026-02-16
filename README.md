@@ -40,9 +40,10 @@ The dataset loader [utils/dataset.py](utils/dataset.py) expects exported files u
 - `test_data.npy` + `test_label.pkl`: held-out test set
 - `images/`: RGB frames (one image per sample name from the `.pkl`)
 
-During training, validation is a deterministic split from the training pool:
-- `mode='train'` and `mode='val'` both read from `train_*` and split using `--val_ratio` + `--split_seed`.
+During training, this repo now validates directly on the held-out test set:
+- `train.py` uses `mode='train'` for training and `mode='test'` as "validation" (test-as-val).
 - `mode='test'` reads from `test_*` (and falls back to legacy `val_*` if present).
+- `mode='val'` still exists for backward compatibility but is not used by default.
 
 Important defaults in [utils/dataset.py](utils/dataset.py):
 - Fixed frames: 32 (`num_frames=32`).
@@ -80,8 +81,7 @@ Key training options:
 - `--dataset`: dataset name (default: `ntu`)
 - `--stage`: `skeleton` | `rgb` | `fusion` (default: `fusion`)
 - `--epochs`, `--batch_size`, `--lr`
-- `--val_ratio`: validation ratio split from train pool (default: `0.1`)
-- `--split_seed`: seed for deterministic train/val split (default: `42`)
+- `--val_ratio`, `--split_seed`: deprecated (kept for backward compatibility; training validates on test set)
 
 Outputs:
 - Best weights: `best_{stage}_{dataset}.pth`

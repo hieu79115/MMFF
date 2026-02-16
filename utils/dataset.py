@@ -211,11 +211,16 @@ class MMFFDataset(Dataset):
                 vr = 0.1
             vr = max(0.0, min(0.5, float(vr)))
 
-            val_count = int(round(vr * n))
-            if n >= 2:
-                val_count = max(1, min(n - 1, val_count))
-            else:
+            # If vr == 0, disable splitting entirely (use full train pool).
+            # This is useful when validation is done on the held-out test set.
+            if vr <= 0.0:
                 val_count = 0
+            else:
+                val_count = int(round(vr * n))
+                if n >= 2:
+                    val_count = max(1, min(n - 1, val_count))
+                else:
+                    val_count = 0
 
             rng = np.random.RandomState(self.split_seed)
             perm = rng.permutation(n)
@@ -273,12 +278,16 @@ class MMFFDataset(Dataset):
             vr = 0.1
         vr = max(0.0, min(0.5, float(vr)))
 
-        val_count = int(round(vr * n))
-        # Ensure both splits are non-empty when possible.
-        if n >= 2:
-            val_count = max(1, min(n - 1, val_count))
-        else:
+        # If vr == 0, disable splitting entirely (use full train pool).
+        if vr <= 0.0:
             val_count = 0
+        else:
+            val_count = int(round(vr * n))
+            # Ensure both splits are non-empty when possible.
+            if n >= 2:
+                val_count = max(1, min(n - 1, val_count))
+            else:
+                val_count = 0
 
         rng = np.random.RandomState(self.split_seed)
         perm = rng.permutation(n)

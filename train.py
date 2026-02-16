@@ -51,9 +51,9 @@ def load_checkpoint_filtered(model, checkpoint_path, device, include_prefixes=No
 
 def plot_history(history, save_path):
     plt.figure(figsize=(12, 5))
-    plt.subplot(1, 2, 1); plt.plot(history['train_acc'], label='Train'); plt.plot(history['val_acc'], label='Val')
+    plt.subplot(1, 2, 1); plt.plot(history['train_acc'], label='Train'); plt.plot(history['val_acc'], label='Test-as-Val')
     plt.title('Accuracy'); plt.legend()
-    plt.subplot(1, 2, 2); plt.plot(history['train_loss'], label='Train'); plt.plot(history['val_loss'], label='Val')
+    plt.subplot(1, 2, 2); plt.plot(history['train_loss'], label='Train'); plt.plot(history['val_loss'], label='Test-as-Val')
     plt.title('Loss'); plt.legend()
     plt.savefig(save_path); plt.close()
 
@@ -104,8 +104,8 @@ def main():
     parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
     parser.add_argument('--dropout', type=float, default=0.0, help='Dropout for ST-GCN blocks (0.0-0.8 typical)')
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
-    parser.add_argument('--val_ratio', type=float, default=0.1, help='Validation ratio split from training set')
-    parser.add_argument('--split_seed', type=int, default=42, help='Random seed for train/val split')
+    parser.add_argument('--val_ratio', type=float, default=0.1, help='(deprecated) Kept for backward compatibility; training now validates on test set')
+    parser.add_argument('--split_seed', type=int, default=42, help='(deprecated) Kept for backward compatibility; training now validates on test set')
     parser.add_argument('--fusion_mode', type=str, default='add', choices=['add', 'concat', 'transformer'], help='Fusion head: add/concat (no transformer) or transformer')
     args = parser.parse_args()
     
@@ -125,18 +125,20 @@ def main():
         is_dummy=False,
         num_classes=NUM_CLASSES,
         dataset=args.dataset,
-        val_ratio=args.val_ratio,
+        # Use full training pool; validation is done on held-out test set.
+        val_ratio=0.0,
         split_seed=args.split_seed,
         stage=args.stage,
         num_frames=args.num_frames,
     )
     val_ds = MMFFDataset(
         root_dir=args.data_dir,
-        mode='val',
+        # Use held-out test set for validation (per project setting).
+        mode='test',
         is_dummy=False,
         num_classes=NUM_CLASSES,
         dataset=args.dataset,
-        val_ratio=args.val_ratio,
+        val_ratio=0.0,
         split_seed=args.split_seed,
         stage=args.stage,
         num_frames=args.num_frames,
@@ -253,7 +255,7 @@ def main():
         print(
             f"Ep {epoch+1}/{args.epochs} | LR: {current_lr:.6f} | "
             f"Train:  {train_acc:.2f}% (loss {train_loss:.4f}) | "
-            f"Val: {val_acc:.2f}% (loss {val_loss:.4f})"
+            f"Test-as-Val: {val_acc:.2f}% (loss {val_loss:.4f})"
         )
         
         history['train_acc'].append(train_acc); history['val_acc'].append(val_acc)
