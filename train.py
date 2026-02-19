@@ -116,25 +116,35 @@ def main():
     )
     model.to(DEVICE)
 
-    # --- LOGIC LOAD WEIGHTS THEO GIAI ĐOẠN ---
+    # --- LOGIC LOAD WEIGHTS THEO GIAI ĐOẠN (Reversed Cross-Attention) ---
+    # Thứ tự train: rgb → skeleton → fusion
     if args.stage == 'rgb':
-        # Load pre-trained Skeleton để hỗ trợ Attention (nhưng không train nó)
-        if os.path.exists(f'best_skeleton_{args.dataset}.pth'):
-            print(">> Loading best SKELETON weights for RGB training...")
-            model.load_state_dict(torch.load(f'best_skeleton_{args.dataset}.pth'), strict=False)
+        # Stage 1: Train RGB đơn lẻ (không cần load gì)
         # Initially freeze backbone for gradual unfreezing
         for param in model.rgb_encoder.backbone.parameters():
             param.requires_grad = False
         print("RGB backbone frozen initially (will unfreeze at epoch {})".format(Config.RGB_UNFREEZE_EPOCH))
     
+    elif args.stage == 'skeleton':
+        # Stage 2: Load pre-trained RGB để cung cấp feature map cho Cross-Attention (nhưng không train RGB)
+        if os.path.exists(f'best_rgb_{args.dataset}.pth'):
+            print(">> Loading best RGB weights for Skeleton training (Cross-Attention)...")
+            model.load_state_dict(torch.load(f'best_rgb_{args.dataset}.pth'), strict=False)
+        else:
+            print("WARNING: best_rgb weights not found. Train RGB stage first!")
+        # Freeze toàn bộ RGB encoder (backbone + head) vì chỉ train skeleton
+        for param in model.rgb_encoder.parameters():
+            param.requires_grad = False
+        print("RGB encoder fully frozen for skeleton training stage.")
+    
     elif args.stage == 'fusion': 
-        # Load cả 2 thằng trước khi train tổng
-        if os.path.exists(f'best_skeleton_{args.dataset}.pth'):
-            print(">> Loading best SKELETON weights...")
-            model.load_state_dict(torch.load(f'best_skeleton_{args.dataset}.pth'), strict=False)
+        # Stage 3: Load cả 2 thằng trước khi train tổng
         if os.path.exists(f'best_rgb_{args.dataset}.pth'):
             print(">> Loading best RGB weights...")
             model.load_state_dict(torch.load(f'best_rgb_{args.dataset}.pth'), strict=False)
+        if os.path.exists(f'best_skeleton_{args.dataset}.pth'):
+            print(">> Loading best SKELETON weights...")
+            model.load_state_dict(torch.load(f'best_skeleton_{args.dataset}.pth'), strict=False)
     
     # Optimizer:  Use AdamW with weight decay
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=Config.WEIGHT_DECAY)
@@ -171,7 +181,7 @@ def main():
     print(f"Loss function: {'Focal Loss' if Config.USE_FOCAL_LOSS else 'CrossEntropy with Label Smoothing'}")
     
     for epoch in range(args.epochs):
-        # Gradual unfreezing for RGB stage
+        # Gradual unfreezing for RGB stage (RGB is now trained first, stage 1)
         if args.stage == 'rgb' and epoch == Config.RGB_UNFREEZE_EPOCH:
             print(f"\n>>> Unfreezing RGB backbone at epoch {epoch+1}...")
             for param in model.rgb_encoder.backbone.parameters():
