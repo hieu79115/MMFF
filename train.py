@@ -106,7 +106,7 @@ def main():
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
     parser.add_argument('--val_ratio', type=float, default=0.1, help='Validation ratio split from training set')
     parser.add_argument('--split_seed', type=int, default=42, help='Random seed for train/val split')
-    parser.add_argument('--fusion_mode', type=str, default='add', choices=['add', 'concat', 'transformer'], help='Fusion head: add/concat (no transformer) or transformer')
+    parser.add_argument('--fusion_mode', type=str, default='add', choices=['add', 'concat'], help='Fusion head: add (sum) or concat')
     args = parser.parse_args()
     
     # Set defaults from config if not specified
@@ -155,17 +155,6 @@ def main():
 
     # --- LOGIC LOAD WEIGHTS THEO GIAI ĐOẠN ---
     if args.stage == 'rgb':
-        # Load pre-trained Skeleton để hỗ trợ Attention (nhưng không train nó)
-        if os.path.exists(f'best_skeleton_{args.dataset}.pth'):
-            print(">> Loading best SKELETON weights for RGB training...")
-            incompatible, skipped = load_checkpoint_filtered(
-                model,
-                f'best_skeleton_{args.dataset}.pth',
-                device=DEVICE,
-                include_prefixes=['skel_encoder.', 'skel_head.'],
-            )
-            if skipped > 0:
-                print(f"   (skipped {skipped} mismatched params from skeleton checkpoint)")
         # Initially freeze backbone for gradual unfreezing
         for param in model.rgb_encoder.backbone.parameters():
             param.requires_grad = False

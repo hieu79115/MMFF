@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from models.st_gcn import SkeletonStream_STGCN
 from models.backbone import RGBStream_Base
-from models.fusion import FusionTransformer, FusionElementwise, FusionConcat
+from models.fusion import FusionElementwise, FusionConcat
 
 class MMFF_Net_Advanced(nn.Module):
     def __init__(
@@ -31,19 +31,10 @@ class MMFF_Net_Advanced(nn.Module):
         # Đầu ra phụ cho RGB (để train riêng)
         self.rgb_head = nn.Linear(2048, num_classes)
         
-        # 3. Fusion
+        # 3. Fusion (chỉ dùng 'add' hoặc 'concat', không dùng transformer)
         fusion_mode = fusion_mode.lower().strip()
         self.fusion_mode = fusion_mode
-        if fusion_mode == 'transformer':
-            self.fusion_head = FusionTransformer(
-                skel_dim=256,
-                rgb_dim=2048,
-                embed_dim=512,
-                num_heads=8,
-                num_classes=num_classes,
-                dropout=0.3,
-            )
-        elif fusion_mode == 'add':
+        if fusion_mode == 'add':
             self.fusion_head = FusionElementwise(
                 skel_dim=256,
                 rgb_dim=2048,
@@ -61,7 +52,7 @@ class MMFF_Net_Advanced(nn.Module):
                 dropout=0.3,
             )
         else:
-            raise ValueError("fusion_mode must be one of: 'transformer', 'add', 'concat'")
+            raise ValueError("fusion_mode must be one of: 'add', 'concat'")
 
     def forward(self, skel_input, rgb_input, stage='fusion'):
         """
@@ -73,16 +64,13 @@ class MMFF_Net_Advanced(nn.Module):
             return self.skel_head(skel_vec) # Chỉ trả về kết quả nhánh xương
             
         # --- Stage 2: Train riêng RGB ---
-        # (Vẫn cần chạy Skeleton encoder để lấy Feature Map cho Cross-Attention, nhưng không update weight xương)
+        # Chỉ sử dụng RGB encoder (không cần skeleton features nữa)
         if stage == 'rgb':
-            with torch.no_grad(): # Đóng băng nhánh xương
-                _, skel_map = self.skel_encoder(skel_input)
-            
-            rgb_vec = self.rgb_encoder(rgb_input, skel_map)
+            rgb_vec = self.rgb_encoder(rgb_input)
             return self.rgb_head(rgb_vec) # Chỉ trả về kết quả nhánh RGB
 
         # --- Stage 3: Fusion (Chạy cả 2) ---
-        skel_vec, skel_map = self.skel_encoder(skel_input) 
-        rgb_vec = self.rgb_encoder(rgb_input, skel_map)
+        skel_vec, _ = self.skel_encoder(skel_input) 
+        rgb_vec = self.rgb_encoder(rgb_input)
         logits = self.fusion_head(skel_vec, rgb_vec)
         return logits
