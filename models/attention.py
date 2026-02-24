@@ -28,8 +28,8 @@ class CrossModalAttention(nn.Module):
         x_rgb_norm = self.norm_rgb(x_rgb)
         x_skel_norm = self.norm_skel(x_skel)
         
-        # Average Pool theo thời gian T dùng cho nhánh skel
-        x_skel_pool = F.adaptive_avg_pool2d(x_skel_norm, (x_skel.size(3), 1)) 
+        # Average Pool theo thời gian T (đưa về 1), giữ nguyên số khớp V (x_skel.size(3))
+        x_skel_pool = F.adaptive_avg_pool2d(x_skel_norm, (1, x_skel.size(3))) 
         
         proj_query = self.query_conv(x_rgb_norm).view(B, -1, H*W).permute(0, 2, 1)
         proj_key = self.key_conv(x_skel_pool).view(B, -1, x_skel.size(3))
@@ -43,6 +43,6 @@ class CrossModalAttention(nn.Module):
         out = torch.bmm(proj_value, attention.permute(0, 2, 1))
         out = out.view(B, C_r, H, W)
         
-        # Residual Connection
+        # Residual Connection (cộng với x_rgb gốc)
         out = self.gamma * out + x_rgb
         return out
