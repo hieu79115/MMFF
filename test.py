@@ -158,6 +158,7 @@ def main():
                         help="Which stage checkpoint to evaluate: 'skeleton', 'rgb', or 'fusion'")
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
+    parser.add_argument('--max_persons', type=int, default=2, help='Number of persons in skeleton (M=2 for NTU60)')
     parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
     parser.add_argument('--dropout', type=float, default=0.0, help='Dropout for ST-GCN blocks (kept for run metadata)')
     parser.add_argument('--is_dummy', action='store_true', help='Use dummy data for testing')
@@ -198,6 +199,7 @@ def main():
                                dataset=args.dataset,
                                stage=args.stage,
                                num_frames=args.num_frames,
+                               max_persons=args.max_persons,
                                root_dir=args.data_dir)
     
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
@@ -236,7 +238,13 @@ def main():
             rgb = rgb.to(DEVICE)
             
             outputs = model(skel, rgb, stage=args.stage)
-            _, predicted = torch.max(outputs, 1)
+            
+            # Fusion stage returns dict; other stages return tensor
+            if isinstance(outputs, dict):
+                logits = outputs['logits']
+            else:
+                logits = outputs
+            _, predicted = torch.max(logits, 1)
             
             all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())

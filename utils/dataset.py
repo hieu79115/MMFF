@@ -17,19 +17,81 @@ def _to_numpy(x):
     return np.asarray(x)
 
 
-def _skeleton_to_c_t_v(skel: np.ndarray, num_joints: int | None = None) -> np.ndarray:
-    """Normalize skeleton array to shape (C, T, V) with C=3.
+def _skeleton_to_c_t_v(skel: np.ndarray, num_joints: int | None = None, max_persons: int = 1) -> np.ndarray:
+    """Normalize skeleton array.
 
-    Accepts common variants:
-    - (T, V, C)
-    - (C, T, V)
-    - (T, C, V)
-    - with extra leading dims (e.g., person/M): takes first element
+    When max_persons == 1: returns shape (C, T, V) with C=3  (single-person).
+    When max_persons >= 2: returns shape (C, T, V, M) with M = max_persons
+                           (zero-padded if fewer persons are present).
+
+    Accepts common input variants:
+    - (T, V, C)       single-person
+    - (C, T, V)       single-person
+    - (T, C, V)       single-person
+    - (M, T, V, C)    multi-person
+    - (C, T, V, M)    multi-person
     """
     skel = _to_numpy(skel)
     if skel is None:
         raise ValueError("Skeleton is None")
 
+    # ---------- multi-person path ----------
+    if max_persons >= 2:
+        # If ndim >= 4, treat first extra dim as M (persons)
+        if skel.ndim >= 4:
+            # Try to identify layout
+            if skel.ndim > 4:
+                # Flatten leading extras keeping last 4
+                shape = skel.shape
+                skel = skel.reshape(-1, *shape[-3:])
+                # now (M, ?, ?, ?)
+
+            # skel is (a, b, c, d)
+            a, b, c, d = skel.shape
+
+            if d == 3:          # (M, T, V, C)
+                # → (C, T, V, M)
+                skel = np.transpose(skel, (3, 1, 2, 0))
+            elif a == 3:        # (C, T, V, M)
+                pass
+            elif b == 3:        # (M, C, T, V) — rare
+                skel = np.transpose(skel, (1, 2, 3, 0))
+            else:
+                # Fallback: assume (M, T, V, C) with C != 3 → truncate/pad last axis
+                skel = skel[..., :3] if skel.shape[-1] >= 3 else np.pad(
+                    skel, [(0,0)]*(skel.ndim-1) + [(0, 3-skel.shape[-1])], mode='constant'
+                )
+                skel = np.transpose(skel, (3, 1, 2, 0))
+
+            # Now (C, T, V, M)
+            C, T, V_raw, M_raw = skel.shape
+        else:
+            # 3D input with max_persons>=2 → treat as single person, add M dim
+            skel_3d = _skeleton_to_c_t_v(skel, num_joints=num_joints, max_persons=1)
+            C, T, V_raw = skel_3d.shape
+            skel = skel_3d[:, :, :, np.newaxis]  # (C, T, V, 1)
+            M_raw = 1
+
+        skel = skel.astype(np.float32)
+
+        # Fix num_joints
+        if num_joints is not None and V_raw != num_joints:
+            if V_raw > num_joints:
+                skel = skel[:, :, :num_joints, :]
+            else:
+                pad = [(0,0), (0,0), (0, num_joints - V_raw), (0,0)]
+                skel = np.pad(skel, pad, mode='constant')
+
+        # Fix num_persons → pad/trim M to max_persons
+        if M_raw > max_persons:
+            skel = skel[:, :, :, :max_persons]
+        elif M_raw < max_persons:
+            pad = [(0,0), (0,0), (0,0), (0, max_persons - M_raw)]
+            skel = np.pad(skel, pad, mode='constant')
+
+        return skel  # (C, T, V, M)
+
+    # ---------- single-person path (original) ----------
     # Peel off extra leading dims (e.g., M persons)
     while skel.ndim > 3:
         skel = skel[0]
@@ -71,7 +133,31 @@ def _skeleton_to_c_t_v(skel: np.ndarray, num_joints: int | None = None) -> np.nd
 
 
 def _temporal_resample_c_t_v(skel_c_t_v: np.ndarray, target_t: int) -> np.ndarray:
-    """Resample (C,T,V) to (C,target_t,V) using linear interpolation along time."""
+    """Resample skeleton along time axis.
+
+    Supports:
+    - (C, T, V)       → (C, target_t, V)
+    - (C, T, V, M)    → (C, target_t, V, M)
+    """
+    if skel_c_t_v.ndim == 4:
+        # Multi-person: (C, T, V, M)
+        c, t, v, m = skel_c_t_v.shape
+        if t == target_t:
+            return skel_c_t_v
+        if t <= 0 or target_t <= 0:
+            return np.zeros((c, max(0, target_t), v, m), dtype=np.float32)
+        if t == 1:
+            return np.repeat(skel_c_t_v, target_t, axis=1)
+        x_old = np.linspace(0.0, 1.0, t, dtype=np.float32)
+        x_new = np.linspace(0.0, 1.0, target_t, dtype=np.float32)
+        out = np.empty((c, target_t, v, m), dtype=np.float32)
+        for ci in range(c):
+            for vi in range(v):
+                for mi in range(m):
+                    out[ci, :, vi, mi] = np.interp(x_new, x_old, skel_c_t_v[ci, :, vi, mi]).astype(np.float32)
+        return out
+
+    # Single-person: (C, T, V)
     c, t, v = skel_c_t_v.shape
     if t == target_t:
         return skel_c_t_v
@@ -113,7 +199,8 @@ class MMFFDataset(Dataset):
                  num_samples=100, num_classes=60, dataset='ntu',
                  val_ratio: float = 0.1, split_seed: int = 42,
                  stage: str | None = None,
-                 num_frames: int = 32):
+                 num_frames: int = 32,
+                 max_persons: int = 1):
         
         # Supported modes:
         # - 'train': training split (from train_* files)
@@ -126,7 +213,8 @@ class MMFFDataset(Dataset):
         self.dataset_name = dataset
         self.root_dir = root_dir
         self.num_frames = int(num_frames)
-        self.img_size = 299       
+        self.img_size = 299
+        self.max_persons = int(max_persons)
 
         self.val_ratio = float(val_ratio)
         self.split_seed = int(split_seed)
@@ -322,7 +410,7 @@ class MMFFDataset(Dataset):
                 if skel_raw is None and isinstance(sample.get('augmented_skeletons', None), (list, tuple)) and len(sample['augmented_skeletons']) > 0:
                     skel_raw = sample['augmented_skeletons'][0]
 
-            skel_c_t_v = _skeleton_to_c_t_v(skel_raw, num_joints=self.num_joints)
+            skel_c_t_v = _skeleton_to_c_t_v(skel_raw, num_joints=self.num_joints, max_persons=self.max_persons)
             skel_c_t_v = _temporal_resample_c_t_v(skel_c_t_v, self.num_frames)
 
             # Optional light noise augmentation (kept for parity with legacy pipeline)
@@ -344,7 +432,12 @@ class MMFFDataset(Dataset):
 
         # ---- Legacy path ----
         # 1. Skeleton
-        skel = self.skeleton_data[real_idx, :, :, :, 0]
+        if self.max_persons >= 2 and self.skeleton_data.ndim >= 5:
+            # (N, C, T, V, M) → keep multi-person
+            skel = self.skeleton_data[real_idx]  # (C, T, V, M)
+            skel = _skeleton_to_c_t_v(skel, num_joints=self.num_joints, max_persons=self.max_persons)
+        else:
+            skel = self.skeleton_data[real_idx, :, :, :, 0]  # single-person fallback
 
         # --- DATA AUGMENTATION CHO SKELETON (Chỉ áp dụng khi Train) ---
         if self.mode == 'train':
@@ -371,8 +464,11 @@ class MMFFDataset(Dataset):
         return skel_tensor, rgb_tensor, 0, label
 
     def _get_dummy_item(self):
-        # ... (giữ nguyên dummy)
-        skel = torch.randn(3, self.num_frames, self.num_joints)
+        # Dummy data for testing code
+        if self.max_persons >= 2:
+            skel = torch.randn(3, self.num_frames, self.num_joints, self.max_persons)
+        else:
+            skel = torch.randn(3, self.num_frames, self.num_joints)
         rgb = torch.randn(3, self.img_size, self.img_size)
         label = int(np.random.randint(0, max(1, self.num_classes)))
         return skel, rgb, 0, label

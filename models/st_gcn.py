@@ -94,14 +94,25 @@ class SkeletonStream_STGCN(nn.Module):
         self.out_dim = 256
 
     def forward(self, x):
-        # Input x shape: (N, C, T, V, M) - Batch, Channel, Time, Vertex(Joint), Person
-        # Chúng ta xử lý gộp Person (M) vào Batch hoặc lấy trung bình.
-        # Giả sử input dataset đưa vào là (N, C, T, V) (1 người)
-        
-        N, C, T, V = x.size()
-        x = x.permute(0, 3, 1, 2).contiguous().view(N, V * C, T)
+        """
+        Args:
+            x: (N, C, T, V) for single-person  OR  (N, C, T, V, M) for multi-person.
+        Returns:
+            vec:         (N, 256)           — global feature vector
+            feature_map: (N, 256, T', V)    — spatial-temporal feature map for cross-attention
+        """
+        if x.dim() == 5:
+            # Multi-person: (N, C, T, V, M) → gộp M vào batch
+            N, C, T, V, M = x.size()
+            x = x.permute(0, 4, 1, 2, 3).contiguous().view(N * M, C, T, V)
+        else:
+            N, C, T, V = x.size()
+            M = 1
+
+        # BatchNorm trên input
+        x = x.permute(0, 3, 1, 2).contiguous().view(N * M, V * C, T)
         x = self.data_bn(x)
-        x = x.view(N, V, C, T).permute(0, 2, 3, 1).contiguous().view(N, C, T, V)
+        x = x.view(N * M, V, C, T).permute(0, 2, 3, 1).contiguous().view(N * M, C, T, V)
 
         # Chạy qua các lớp ST-GCN
         if self.edge_importance_weighting and self.edge_importance is not None:
@@ -111,12 +122,18 @@ class SkeletonStream_STGCN(nn.Module):
             for gcn in self.st_gcn_networks:
                 x = gcn(x, self.A)
 
-        # x lúc này có shape (N, 256, T, V) -> Đây là Feature Map cần cho Attention
-        feature_map = x 
+        # x: (N*M, 256, T', V)
+        feature_map = x
 
-        # Global Pooling (Spatial + Temporal) cho Late Fusion
+        # Global Pooling (Spatial + Temporal)
         x = F.avg_pool2d(x, x.size()[2:])
-        x = x.view(N, -1) # Vector (N, 256)
-        
-        # TRẢ VỀ CẢ 2
+        x = x.view(N * M, -1)  # (N*M, 256)
+
+        if M > 1:
+            # Pool across persons: (N*M, 256) → (N, M, 256) → mean → (N, 256)
+            x = x.view(N, M, -1).mean(dim=1)
+            # Feature map: (N*M, 256, T', V) → (N, M, 256, T', V) → mean → (N, 256, T', V)
+            _, Cout, Tout, Vout = feature_map.size()
+            feature_map = feature_map.view(N, M, Cout, Tout, Vout).mean(dim=1)
+
         return x, feature_map

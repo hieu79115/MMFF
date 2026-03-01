@@ -60,6 +60,9 @@ class Config:
     FOCAL_ALPHA = 0.25      # Focal loss alpha parameter (balancing factor)
     FOCAL_GAMMA = 2.0       # Focal loss gamma parameter (focusing parameter)
     
+    # Auxiliary Loss (keeps individual branches from degrading during fusion training)
+    AUX_LOSS_WEIGHT = 0.3   # Weight for auxiliary skel + rgb losses in fusion stage
+    
     # ============================================================================
     # Dataset Parameters
     # ============================================================================
@@ -74,6 +77,7 @@ class Config:
     # Data preprocessing parameters
     NUM_FRAMES = 32   # Number of frames to resample skeleton sequences to
     IMG_SIZE = 299    # Image size for RGB input (Xception expects 299x299)
+    MAX_PERSONS = 2   # Number of persons in skeleton data (NTU60 has M=2)
     
     # ============================================================================
     # RGB Training Strategy Parameters

@@ -22,7 +22,7 @@ def plot_history(history, save_path):
     plt.title('Loss'); plt.legend()
     plt.savefig(save_path); plt.close()
 
-def train_epoch(model, loader, criterion, optimizer, device, stage):
+def train_epoch(model, loader, criterion, optimizer, device, stage, aux_weight=0.3):
     model.train()
     total_loss, correct, total = 0, 0, 0
     pbar = tqdm(loader, desc=f"Train {stage}", leave=False)
@@ -30,15 +30,24 @@ def train_epoch(model, loader, criterion, optimizer, device, stage):
         skel, rgb, labels = skel.to(device), rgb.to(device), labels.to(device)
         optimizer.zero_grad()
         
-        # Truyền tham số stage vào model
         outputs = model(skel, rgb, stage=stage)
         
-        loss = criterion(outputs, labels)
+        # Fusion stage returns dict with auxiliary logits
+        if isinstance(outputs, dict):
+            loss_main = criterion(outputs['logits'], labels)
+            loss_skel = criterion(outputs['skel_logits'], labels)
+            loss_rgb  = criterion(outputs['rgb_logits'], labels)
+            loss = loss_main + aux_weight * (loss_skel + loss_rgb)
+            logits = outputs['logits']
+        else:
+            loss = criterion(outputs, labels)
+            logits = outputs
+        
         loss.backward()
         optimizer.step()
         
         total_loss += loss.item()
-        _, pred = torch.max(outputs, 1)
+        _, pred = torch.max(logits, 1)
         total += labels.size(0)
         correct += (pred == labels).sum().item()
         pbar.set_postfix({'acc': 100.*correct/total})
@@ -51,9 +60,16 @@ def validate(model, loader, criterion, device, stage):
         for skel, rgb, _, labels in loader:
             skel, rgb, labels = skel.to(device), rgb.to(device), labels.to(device)
             outputs = model(skel, rgb, stage=stage)
-            loss = criterion(outputs, labels)
+            
+            if isinstance(outputs, dict):
+                loss = criterion(outputs['logits'], labels)
+                logits = outputs['logits']
+            else:
+                loss = criterion(outputs, labels)
+                logits = outputs
+            
             total_loss += loss.item()
-            _, pred = torch.max(outputs, 1)
+            _, pred = torch.max(logits, 1)
             total += labels.size(0)
             correct += (pred == labels).sum().item()
     return total_loss/len(loader), 100.*correct/total
@@ -69,6 +85,7 @@ def main():
     parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
     parser.add_argument('--dropout', type=float, default=0.0, help='Dropout for ST-GCN blocks (0.0-0.8 typical)')
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
+    parser.add_argument('--max_persons', type=int, default=Config.MAX_PERSONS, help='Number of persons in skeleton (M=2 for NTU60)')
     parser.add_argument('--val_ratio', type=float, default=0.1, help='Validation ratio split from training set')
     parser.add_argument('--split_seed', type=int, default=42, help='Random seed for train/val split')
     args = parser.parse_args()
@@ -93,6 +110,7 @@ def main():
         split_seed=args.split_seed,
         stage=args.stage,
         num_frames=args.num_frames,
+        max_persons=args.max_persons,
     )
     val_ds = MMFFDataset(
         root_dir=args.data_dir,
@@ -104,6 +122,7 @@ def main():
         split_seed=args.split_seed,
         stage=args.stage,
         num_frames=args.num_frames,
+        max_persons=args.max_persons,
     )
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
@@ -181,7 +200,7 @@ def main():
                 param_group['lr'] = param_group['lr'] * Config.RGB_UNFREEZE_LR_FACTOR
             print(f"Learning rate reduced to:  {optimizer.param_groups[0]['lr']:.6f}")
         
-        train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, DEVICE, args.stage)
+        train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, DEVICE, args.stage, aux_weight=Config.AUX_LOSS_WEIGHT)
         val_loss, val_acc = validate(model, val_loader, criterion, DEVICE, args.stage)
         
         # Step schedulers
