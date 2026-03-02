@@ -3,11 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class CrossModalAttention(nn.Module):
-    """
-    CẢI TIẾN: Thay thế Projection heuristic của bài báo bằng Cross-Attention.
-    Mục tiêu: Dùng đặc trưng Skeleton (Key/Value) để hướng dẫn đặc trưng RGB (Query).
-    """
-    def __init__(self, rgb_channels, skel_channels, inter_channels=512):
+    def __init__(self, rgb_channels, skel_channels, inter_channels=512, dropout=0.0):
         super(CrossModalAttention, self).__init__()
         
         self.query_conv = nn.Conv2d(rgb_channels, inter_channels, kernel_size=1)
