@@ -18,6 +18,7 @@ class Config:
     
     # RGB Stream Parameters
     RGB_DIM = 2048  # Output dimension of RGB encoder (Xception backbone)
+    NUM_RGB_FRAMES = 3  # Number of RGB frames (beginning, middle, end)
     
     # Fusion Transformer Parameters (Upgraded for better capacity)
     EMBED_DIM = 512  # Increased from 256 for higher model capacity
@@ -74,6 +75,7 @@ class Config:
     # Data preprocessing parameters
     NUM_FRAMES = 32   # Number of frames to resample skeleton sequences to
     IMG_SIZE = 299    # Image size for RGB input (Xception expects 299x299)
+    NUM_RGB_FRAMES_DATA = 3  # Number of RGB frames in dataset (beginning, middle, end)
     
     # ============================================================================
     # RGB Training Strategy Parameters

@@ -332,13 +332,23 @@ class MMFFDataset(Dataset):
 
             skel_tensor = torch.from_numpy(skel_c_t_v).float()
 
-            # 2) RGB crop directly from pkl if present
-            img = sample.get('rgb_crop', None)
-            pil = _to_pil_rgb(img)
-            if pil is None:
-                rgb_tensor = torch.zeros(3, self.img_size, self.img_size)
-            else:
-                rgb_tensor = self.transform(pil)
+            # 2) RGB: chuỗi ảnh từ key 'rgb_crops' (list ảnh đầu-giữa-cuối, ...)
+            rgb_crops_raw = sample.get('rgb_crops', [])
+            if not isinstance(rgb_crops_raw, (list, tuple)):
+                rgb_crops_raw = [rgb_crops_raw]
+            
+            rgb_frames = []
+            for crop in rgb_crops_raw:
+                pil = _to_pil_rgb(crop)
+                if pil is None:
+                    rgb_frames.append(torch.zeros(3, self.img_size, self.img_size))
+                else:
+                    rgb_frames.append(self.transform(pil))
+            
+            if len(rgb_frames) == 0:
+                rgb_frames.append(torch.zeros(3, self.img_size, self.img_size))
+            
+            rgb_tensor = torch.stack(rgb_frames, dim=0)  # (num_frames, 3, H, W)
 
             return skel_tensor, rgb_tensor, 0, label
 
@@ -353,7 +363,7 @@ class MMFFDataset(Dataset):
 
         skel_tensor = torch.from_numpy(skel).float()
 
-        # 2. RGB Image
+        # 2. RGB Images (legacy path không hỗ trợ multi-frame, cần chuyển sang pkl mới)
         video_name = self.sample_name[real_idx]
         video_name_str = str(video_name)
         if video_name_str.lower().endswith(('.jpg', '.jpeg', '.png')):
@@ -363,16 +373,17 @@ class MMFFDataset(Dataset):
         img_path = os.path.join(self.root_dir, 'images', img_filename)
         try:
             image = Image.open(img_path).convert('RGB')
-            rgb_tensor = self.transform(image)
+            frame = self.transform(image)
         except:
-            rgb_tensor = torch.zeros(3, self.img_size, self.img_size)
+            frame = torch.zeros(3, self.img_size, self.img_size)
+        rgb_tensor = frame.unsqueeze(0)  # (1, 3, H, W) — 1 frame duy nhất
 
         label = self.labels[real_idx]
         return skel_tensor, rgb_tensor, 0, label
 
     def _get_dummy_item(self):
-        # ... (giữ nguyên dummy)
+        num_rgb_frames = 3  # dummy mặc định 3 frame
         skel = torch.randn(3, self.num_frames, self.num_joints)
-        rgb = torch.randn(3, self.img_size, self.img_size)
+        rgb = torch.randn(num_rgb_frames, 3, self.img_size, self.img_size)  # (T, 3, H, W)
         label = int(np.random.randint(0, max(1, self.num_classes)))
         return skel, rgb, 0, label

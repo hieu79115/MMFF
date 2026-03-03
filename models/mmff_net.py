@@ -19,7 +19,7 @@ class MMFF_Net_Advanced(nn.Module):
         # Đầu ra phụ cho Skeleton (để train riêng)
         self.skel_head = nn.Linear(256, num_classes)
         
-        # 2. Nhánh RGB
+        # 2. Nhánh RGB (multi-frame: tự động theo số frame trong input)
         self.rgb_encoder = RGBStream_Base(skel_channels=256) 
         # Đầu ra phụ cho RGB (để train riêng)
         self.rgb_head = nn.Linear(2048, num_classes)

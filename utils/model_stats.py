@@ -92,8 +92,8 @@ def calculate_flops(model, dataset, num_frames=32, stage='fusion', device='cuda'
     # Skeleton: (batch=1, channels=3, frames=T, joints=V)
     skel_input = torch.randn(1, 3, num_frames, num_joints).to(device)
     
-    # RGB: (batch=1, channels=3, height=H, width=W)
-    rgb_input = torch.randn(1, 3, img_size, img_size).to(device)
+    # RGB: (batch=1, num_rgb_frames=3, channels=3, height=H, width=W)
+    rgb_input = torch.randn(1, 3, 3, img_size, img_size).to(device)
     
     try:
         # Tính FLOPs với stage tương ứng

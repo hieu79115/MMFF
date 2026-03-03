@@ -4,6 +4,11 @@ import timm
 from models.attention import CrossModalAttention
 
 class RGBStream_Base(nn.Module):
+    """
+    Nhánh RGB hỗ trợ multi-frame input (ví dụ: 3 frame đầu-giữa-cuối).
+    Input shape: (B, num_frames, 3, H, W)
+    Output shape: (B, 2048)
+    """
     def __init__(self, skel_channels=256):
         super(RGBStream_Base, self).__init__()
         
@@ -14,24 +19,57 @@ class RGBStream_Base(nn.Module):
         # Xception trả về feature map có 2048 channels ở lớp cuối cùng
         out_channels = 2048
         
-        # Cross-Attention Module
+        # Cross-Attention Module (áp dụng cho mỗi frame)
         self.cross_att = CrossModalAttention(rgb_channels=out_channels, skel_channels=skel_channels)
         
-        # Pooling để chuyển về vector
+        # Pooling spatial để chuyển feature map -> vector cho mỗi frame
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+        
+        # Temporal Attention: học cách tổng hợp thông tin từ nhiều frame
+        # Mỗi frame được đánh trọng số attention trước khi gộp
+        self.temporal_attn = nn.Sequential(
+            nn.Linear(out_channels, out_channels // 4),
+            nn.ReLU(inplace=True),
+            nn.Linear(out_channels // 4, 1),
+        )
 
     def forward(self, x_rgb, x_skel_feature_map):
-        # timm trả về một list các feature maps từ nông đến sâu
-        features = self.backbone(x_rgb)
+        """
+        Args:
+            x_rgb: (B, num_frames, 3, H, W) - Nhiều frame RGB
+            x_skel_feature_map: (B, C_skel, T_skel, V_skel) - Feature map từ nhánh skeleton
+        Returns:
+            f_rgb_vec: (B, 2048) - Vector đặc trưng RGB tổng hợp
+        """
+        B, T, C, H, W = x_rgb.shape
         
-        # Ta lấy cái cuối cùng (feature map sâu nhất)
-        f_rgb_map = features[-1] 
-        # Shape dự kiến: (Batch, 2048, 10, 10) với ảnh đầu vào 299x299
+        # Gộp batch và frame để chạy backbone 1 lần duy nhất
+        x = x_rgb.reshape(B * T, C, H, W)  # (B*T, 3, H, W)
         
-        # Áp dụng Cross-Attention (Skel hướng dẫn RGB)
-        f_rgb_guided = self.cross_att(f_rgb_map, x_skel_feature_map)
+        # Trích xuất feature map qua Xception
+        features = self.backbone(x)
+        f_rgb_map = features[-1]  # (B*T, 2048, h, w)
+        _, C_out, h, w = f_rgb_map.shape
         
-        # Pooling & Flatten
-        f_rgb_vec = self.avg_pool(f_rgb_guided).flatten(1)
+        # Tách lại thành (B, T, 2048, h, w)
+        f_rgb_map = f_rgb_map.view(B, T, C_out, h, w)
+        
+        # Áp dụng Cross-Attention cho từng frame + Spatial Pooling
+        frame_vecs = []
+        for t in range(T):
+            frame_feat = f_rgb_map[:, t]  # (B, 2048, h, w)
+            guided = self.cross_att(frame_feat, x_skel_feature_map)  # (B, 2048, h, w)
+            pooled = self.avg_pool(guided).flatten(1)  # (B, 2048)
+            frame_vecs.append(pooled)
+        
+        # Stack thành (B, T, 2048)
+        frame_features = torch.stack(frame_vecs, dim=1)
+        
+        # Temporal Attention Aggregation
+        attn_logits = self.temporal_attn(frame_features)  # (B, T, 1)
+        attn_weights = torch.softmax(attn_logits, dim=1)  # (B, T, 1)
+        
+        # Weighted sum qua chiều thời gian
+        f_rgb_vec = (frame_features * attn_weights).sum(dim=1)  # (B, 2048)
         
         return f_rgb_vec
