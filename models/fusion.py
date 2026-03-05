@@ -58,8 +58,8 @@ class FusionElementwise(nn.Module):
         super().__init__()
 
         op = op.lower().strip()
-        if op not in {'add'}:
-            raise ValueError(f"FusionElementwise op must be 'add', got: {op}")
+        if op not in {'add', 'average'}:
+            raise ValueError(f"FusionElementwise op must be 'add' or 'average', got: {op}")
 
         self.op = op
         self.skel_proj = nn.Linear(skel_dim, embed_dim)
@@ -77,7 +77,10 @@ class FusionElementwise(nn.Module):
         x_skel = self.skel_proj(f_skel)
         x_rgb = self.rgb_proj(f_rgb)
 
-        fused = x_skel + x_rgb
+        if self.op == 'average':
+            fused = (x_skel + x_rgb) / 2.0
+        else:
+            fused = x_skel + x_rgb
 
         return self.mlp_head(fused)
 

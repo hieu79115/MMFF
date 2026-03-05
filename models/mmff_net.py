@@ -43,7 +43,7 @@ class MMFF_Net_Advanced(nn.Module):
                 num_classes=num_classes,
                 dropout=0.3,
             )
-        elif fusion_mode == 'add':
+        elif fusion_mode in ['add', 'average']:
             self.fusion_head = FusionElementwise(
                 skel_dim=256,
                 rgb_dim=2048,
@@ -61,7 +61,7 @@ class MMFF_Net_Advanced(nn.Module):
                 dropout=0.3,
             )
         else:
-            raise ValueError("fusion_mode must be one of: 'transformer', 'add', 'concat'")
+            raise ValueError("fusion_mode must be one of: 'transformer', 'add', 'average', 'concat'")
 
     def forward(self, skel_input, rgb_input, stage='fusion'):
         """
