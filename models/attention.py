@@ -21,7 +21,7 @@ class CrossModalAttention(nn.Module):
         B, C_r, H, W = x_rgb.size()
         
         # Average Pool theo thời gian T
-        x_skel_pool = F.adaptive_avg_pool2d(x_skel, (1, x_skel.size(3))) 
+        x_skel_pool = F.adaptive_avg_pool2d(x_skel, (x_skel.size(3), 1)) 
         
         proj_query = self.query_conv(x_rgb).view(B, -1, H*W).permute(0, 2, 1)
         proj_key = self.key_conv(x_skel_pool).view(B, -1, x_skel.size(3))
