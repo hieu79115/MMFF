@@ -89,8 +89,13 @@ def calculate_flops(model, dataset, num_frames=32, stage='fusion', device='cuda'
     model.to(device)
     
     # Tạo dummy inputs theo đúng format của dataset
-    # Skeleton: (batch=1, channels=3, frames=T, joints=V)
-    skel_input = torch.randn(1, 3, num_frames, num_joints).to(device)
+    # NTU: Skeleton (batch=1, C=3, T, V, M=2) - multi-person
+    # UTD/NW-UCLA: Skeleton (batch=1, C=3, T, V) - single person
+    if dataset.lower() == 'ntu':
+        num_persons = 2
+        skel_input = torch.randn(1, 3, num_frames, num_joints, num_persons).to(device)
+    else:
+        skel_input = torch.randn(1, 3, num_frames, num_joints).to(device)
     
     # RGB: (batch=1, channels=3, height=H, width=W)
     rgb_input = torch.randn(1, 3, img_size, img_size).to(device)
