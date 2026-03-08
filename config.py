@@ -19,11 +19,13 @@ class Config:
     # RGB Stream Parameters
     RGB_DIM = 2048  # Output dimension of RGB encoder (Xception backbone)
     
-    # Fusion Transformer Parameters (Upgraded for better capacity)
-    EMBED_DIM = 512  # Increased from 256 for higher model capacity
-    NUM_HEADS = 8     # Increased from 4 for better attention
-    TRANSFORMER_LAYERS = 3  # Increased from 1 for deeper feature learning
-    DROPOUT = 0.3    # Reduced from 0.5 to prevent over-regularization
+    # Fusion Transformer Parameters (Improved for stability + small datasets)
+    EMBED_DIM = 256   # Reduced from 512: less over-parameterization
+    NUM_HEADS = 4     # Reduced from 8: appropriate for 256-d
+    TRANSFORMER_LAYERS = 2   # Reduced from 3: less over-parameterization
+    NUM_SKEL_TOKENS = 4      # NEW: split skeleton vec into 4 tokens
+    NUM_RGB_TOKENS = 8       # NEW: split RGB vec into 8 tokens
+    DROPOUT = 0.3    # Unchanged
     
     # ============================================================================
     # Training Parameters per Stage

@@ -28,10 +28,13 @@ class MMFF_Net_Advanced(nn.Module):
         self.fusion_head = FusionTransformer(
             skel_dim=256, 
             rgb_dim=2048, 
-            embed_dim=512,      # Updated from 256
-            num_heads=8,        # Updated from 4
+            embed_dim=256,          # Reduced: fits small datasets better
+            num_heads=4,            # Reduced: 4 heads for 256-d
+            num_layers=2,           # Reduced: less over-parameterization
+            num_skel_tokens=4,      # Split skeleton into 4 tokens
+            num_rgb_tokens=8,       # Split RGB into 8 tokens
             num_classes=num_classes,
-            dropout=0.3         # Updated from 0.5
+            dropout=0.3
         )
 
     def forward(self, skel_input, rgb_input, stage='fusion'):
