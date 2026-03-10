@@ -106,7 +106,7 @@ def main():
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
     parser.add_argument('--val_ratio', type=float, default=0.1, help='Validation ratio split from training set')
     parser.add_argument('--split_seed', type=int, default=42, help='Random seed for train/val split')
-    parser.add_argument('--fusion_mode', type=str, default='add', choices=['add', 'concat'], help='Fusion head: add (sum) or concat')
+    parser.add_argument('--fusion_mode', type=str, default='add', choices=['add', 'avg', 'concat'], help='Fusion head: add (sum), avg, or concat')
     args = parser.parse_args()
     
     # Set defaults from config if not specified

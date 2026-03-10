@@ -31,10 +31,10 @@ class MMFF_Net_Advanced(nn.Module):
         # Đầu ra phụ cho RGB (để train riêng)
         self.rgb_head = nn.Linear(2048, num_classes)
         
-        # 3. Fusion (chỉ dùng 'add' hoặc 'concat', không dùng transformer)
+        # 3. Fusion (chỉ dùng 'add', 'avg', 'concat')
         fusion_mode = fusion_mode.lower().strip()
         self.fusion_mode = fusion_mode
-        if fusion_mode == 'add':
+        if fusion_mode in ['add', 'avg']:
             self.fusion_head = FusionElementwise(
                 skel_dim=256,
                 rgb_dim=2048,
@@ -52,7 +52,7 @@ class MMFF_Net_Advanced(nn.Module):
                 dropout=0.3,
             )
         else:
-            raise ValueError("fusion_mode must be one of: 'add', 'concat'")
+            raise ValueError(f"fusion_mode must be one of: 'add', 'avg', 'concat', got: {fusion_mode}")
 
     def forward(self, skel_input, rgb_input, stage='fusion'):
         """
@@ -72,5 +72,7 @@ class MMFF_Net_Advanced(nn.Module):
         # --- Stage 3: Fusion (Chạy cả 2) ---
         skel_vec, _ = self.skel_encoder(skel_input) 
         rgb_vec = self.rgb_encoder(rgb_input)
+        
         logits = self.fusion_head(skel_vec, rgb_vec)
+            
         return logits
