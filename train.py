@@ -71,7 +71,6 @@ def main():
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
     parser.add_argument('--val_ratio', type=float, default=0.1, help='Validation ratio split from training set')
     parser.add_argument('--split_seed', type=int, default=42, help='Random seed for train/val split')
-    parser.add_argument('--no_cross_attention', action='store_true', help='Disable Cross-Attention in RGB Stream')
     args = parser.parse_args()
     
     # Set defaults from config if not specified
@@ -114,7 +113,6 @@ def main():
         dataset=args.dataset,
         edge_importance_weighting=bool(args.edge_importance),
         stgcn_dropout=float(args.dropout),
-        use_cross_attention=not args.no_cross_attention,
     )
     model.to(DEVICE)
 

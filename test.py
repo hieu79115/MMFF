@@ -161,7 +161,6 @@ def main():
     parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
     parser.add_argument('--dropout', type=float, default=0.0, help='Dropout for ST-GCN blocks (kept for run metadata)')
     parser.add_argument('--is_dummy', action='store_true', help='Use dummy data for testing')
-    parser.add_argument('--no_cross_attention', action='store_true', help='Disable Cross-Attention in RGB Stream')
     
     args = parser.parse_args()
 
@@ -209,7 +208,6 @@ def main():
         dataset=args.dataset,
         edge_importance_weighting=bool(args.edge_importance),
         stgcn_dropout=float(args.dropout),
-        use_cross_attention=not args.no_cross_attention,
     )
     
     # Load weights

@@ -56,8 +56,6 @@ def main():
     # Compare all stages
     parser.add_argument('--compare_all', action='store_true',
                        help='Compare all stages (skeleton, rgb, fusion)')
-    parser.add_argument('--no_cross_attention', action='store_true',
-                       help='Disable Cross-Attention in RGB Stream')
     
     args = parser.parse_args()
     
@@ -85,8 +83,7 @@ def main():
             num_frames=args.num_frames,
             device=DEVICE,
             edge_importance=bool(args.edge_importance),
-            dropout=args.dropout,
-            use_cross_attention=not args.no_cross_attention
+            dropout=args.dropout
         )
         
         if args.save:
@@ -118,7 +115,6 @@ def main():
         dataset=args.dataset,
         edge_importance_weighting=bool(args.edge_importance),
         stgcn_dropout=args.dropout,
-        use_cross_attention=not args.no_cross_attention,
     )
     
     # Load checkpoint nếu có
