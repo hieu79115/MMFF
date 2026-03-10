@@ -9,8 +9,10 @@ class RGBStream_Base(nn.Module):
     Input shape: (B, num_frames, 3, H, W)
     Output shape: (B, 2048)
     """
-    def __init__(self, skel_channels=256):
+    def __init__(self, skel_channels=256, use_cross_attention=True):
         super(RGBStream_Base, self).__init__()
+        
+        self.use_cross_attention = use_cross_attention
         
         # Load Xception từ timm (pretrained=True để lấy trọng số đã học ImageNet)
         # features_only=True: Chỉ lấy feature maps, bỏ lớp phân loại cuối
@@ -58,7 +60,10 @@ class RGBStream_Base(nn.Module):
         frame_vecs = []
         for t in range(T):
             frame_feat = f_rgb_map[:, t]  # (B, 2048, h, w)
-            guided = self.cross_att(frame_feat, x_skel_feature_map)  # (B, 2048, h, w)
+            if self.use_cross_attention:
+                guided = self.cross_att(frame_feat, x_skel_feature_map)  # (B, 2048, h, w)
+            else:
+                guided = frame_feat
             pooled = self.avg_pool(guided).flatten(1)  # (B, 2048)
             frame_vecs.append(pooled)
         

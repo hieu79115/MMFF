@@ -5,7 +5,7 @@ from models.backbone import RGBStream_Base
 from models.fusion import FusionTransformer
 
 class MMFF_Net_Advanced(nn.Module):
-    def __init__(self, num_classes=60, dataset='ntu', edge_importance_weighting: bool = False, stgcn_dropout: float = 0.0):
+    def __init__(self, num_classes=60, dataset='ntu', edge_importance_weighting: bool = False, stgcn_dropout: float = 0.0, use_cross_attention: bool = True):
         super(MMFF_Net_Advanced, self).__init__()
         
         # 1. Nhánh Skeleton
@@ -20,7 +20,7 @@ class MMFF_Net_Advanced(nn.Module):
         self.skel_head = nn.Linear(256, num_classes)
         
         # 2. Nhánh RGB (multi-frame: tự động theo số frame trong input)
-        self.rgb_encoder = RGBStream_Base(skel_channels=256) 
+        self.rgb_encoder = RGBStream_Base(skel_channels=256, use_cross_attention=use_cross_attention) 
         # Đầu ra phụ cho RGB (để train riêng)
         self.rgb_head = nn.Linear(2048, num_classes)
         
