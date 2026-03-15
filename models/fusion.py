@@ -139,3 +139,87 @@ class CrossModalModulation(nn.Module):
         h_fused = self.dropout(h_fused)
         logits = self.mlp_head(h_fused)
         return logits
+
+class DisentangledMultimodalFusion(nn.Module):
+    """
+    💎 HIGH CONTRIBUTION (TÍNH ĐÓNG GÓP CAO CHO LUẬN VĂN) 💎
+    Disentangled Representation Multimodal Fusion (Hợp nhất theo biểu diễn tháo gỡ)
+    
+    Phương pháp này giải quyết một vấn đề cực kỳ học thuật: 
+    "Làm sao để mô hình biết được thông tin nào là cốt lõi dùng chung (Shared) 
+    và thông tin nào là đặc trưng riêng của mỗi modality (Private)?"
+    
+    Cách hoạt động:
+    1. Tách đặc trưng RGB thành: RGB_shared + RGB_private
+    2. Tách đặc trưng Skeleton thành: Skel_shared + Skel_private
+    3. Trích xuất Consensus (Sự đồng thuận) từ 2 nhánh Shared thông qua Cross-Attention đơn giản.
+    4. Fuse kết quả: Consensus + RGB_private + Skel_private.
+    
+    Trong luận văn, bạn có thể lập luận rằng phương pháp này chống lại sự dư thừa 
+    thông tin (Redundancy) và giúp mô hình học bản chất hành động thực sự thay vì 
+    học thuộc lòng nhiễu từ mô trường.
+    """
+    def __init__(self, skel_dim, rgb_dim, embed_dim=512, num_classes=60, dropout=0.3):
+        super(DisentangledMultimodalFusion, self).__init__()
+        
+        self.embed_dim = embed_dim
+        
+        # 1. Projectors để đưa về không gian trung gian
+        self.skel_base = nn.Sequential(nn.Linear(skel_dim, embed_dim), nn.LayerNorm(embed_dim), nn.GELU())
+        self.rgb_base = nn.Sequential(nn.Linear(rgb_dim, embed_dim), nn.LayerNorm(embed_dim), nn.GELU())
+        
+        # 2. Extractors tách không gian Feature (Shared vs Private)
+        # Shared là những gì chung nhất (ví dụ: tư thế con người tồn tại ở cả hình và xương)
+        self.skel_shared_extractor = nn.Linear(embed_dim, embed_dim // 2)
+        self.skel_private_extractor = nn.Linear(embed_dim, embed_dim // 2)
+        
+        self.rgb_shared_extractor = nn.Linear(embed_dim, embed_dim // 2)
+        self.rgb_private_extractor = nn.Linear(embed_dim, embed_dim // 2)
+        
+        # 3. Consensus Module (Đoạt lấy sự đồng thuận giữa 2 shared features)
+        # Dùng một nhánh Multi-head Attention nhỏ chỉ trên nhánh Shared (rất ít tham số)
+        self.consensus_attention = nn.MultiheadAttention(embed_dim // 2, num_heads=4, batch_first=True, dropout=dropout)
+        
+        # 4. Final MLP Classifier (Nhận vào Shared_consensus + Skel_private + RGB_private)
+        # Tổng dimension = (embed_dim // 2) + (embed_dim // 2) + (embed_dim // 2) = embed_dim * 1.5
+        fused_dim = int(embed_dim * 1.5)
+        self.classifier = nn.Sequential(
+            nn.LayerNorm(fused_dim),
+            nn.Linear(fused_dim, embed_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim, num_classes)
+        )
+
+    def forward(self, f_skel, f_rgb, return_features_for_loss=False):
+        # Biến đổi cơ bản
+        h_skel = self.skel_base(f_skel)
+        h_rgb = self.rgb_base(f_rgb)
+        
+        # Tách nhánh (Disentanglement)
+        s_shared = self.skel_shared_extractor(h_skel)
+        s_priv = self.skel_private_extractor(h_skel)
+        
+        r_shared = self.rgb_shared_extractor(h_rgb)
+        r_priv = self.rgb_private_extractor(h_rgb)
+        
+        # Tìm sự đồng thuận (Consensus) bằng Cross-Attention giữa các nhánh shared
+        # Biến thành sequence length = 1 để đưa vào attention: (Batch, Seq, Feature)
+        s_seq = s_shared.unsqueeze(1)
+        r_seq = r_shared.unsqueeze(1)
+        
+        # Skel query RGB Context
+        consensus, _ = self.consensus_attention(query=s_seq, key=r_seq, value=r_seq)
+        consensus = consensus.squeeze(1) # (Batch, embed_dim // 2)
+        
+        # Hợp nhất: Consensus (Chung) + Skel_private (Đặc trưng xương riêng) + RGB_private (Bối cảnh hình ảnh riêng)
+        fused_vector = torch.cat([consensus, s_priv, r_priv], dim=-1)
+        
+        # Phân loại
+        logits = self.classifier(fused_vector)
+        
+        if return_features_for_loss:
+            # Trả về thêm để tính Orthogonality Loss và Contrastive Loss trong train.py
+            return logits, (s_shared, r_shared, s_priv, r_priv)
+            
+        return logits
