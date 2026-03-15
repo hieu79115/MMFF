@@ -8,6 +8,7 @@ from pytorch_grad_cam.utils.image import show_cam_on_image
 from models.mmff_net import MMFF_Net_Advanced
 from utils.dataset import MMFFDataset
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+from test import get_class_names
 
 class ModelWrapper(torch.nn.Module):
     def __init__(self, model, skel_input):
@@ -39,6 +40,7 @@ def main():
     # Xác định số lượng classes từ config
     from config import Config
     NUM_CLASSES = Config.get_num_classes(args.dataset)
+    class_names = get_class_names(args.dataset, NUM_CLASSES)
 
     # Khởi tạo model
     model = MMFF_Net_Advanced(num_classes=NUM_CLASSES, dataset=args.dataset)
@@ -118,9 +120,11 @@ def main():
     visualization_after = show_cam_on_image(rgb_img, grayscale_cam_after, use_rgb=True)
     visualization_before = show_cam_on_image(rgb_img, grayscale_cam_before, use_rgb=True)
 
+    class_name = class_names[target_label] if target_label < len(class_names) else f"Class {target_label}"
+
     fig, ax = plt.subplots(1, 3, figsize=(15, 5))
     ax[0].imshow(rgb_img)
-    ax[0].set_title(f'Original RGB Crop\n(Target Class: {target_label})')
+    ax[0].set_title(f'Original RGB Crop\n(Target: {class_name})')
     
     ax[1].imshow(visualization_before)
     ax[1].set_title('Grad-CAM BEFORE Cross-Attention')
@@ -135,6 +139,7 @@ def main():
     output_filename = f'gradcam_real_{args.dataset}.png' if not args.is_dummy else 'gradcam_dummy.png'
     plt.savefig(output_filename, dpi=300)
     print(f"Grad-CAM visualization saved to {output_filename}")
+    plt.show() # Display inline in Jupyter Notebook / Kaggle
 
 if __name__ == '__main__':
     main()
