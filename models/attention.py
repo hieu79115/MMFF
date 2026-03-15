@@ -20,8 +20,12 @@ class CrossModalAttention(nn.Module):
     def forward(self, x_rgb, x_skel):
         B, C_r, H, W = x_rgb.size()
         
-        x_skel_pool = F.adaptive_avg_pool2d(x_skel, (x_skel.size(3), 1)) 
+        # Fix: Pool the temporal dimension (T) to 1 and preserve the joint dimension (V)
+        # Assuming x_skel is (B, C, T, V). T is height, V is width.
+        x_skel_pool = F.adaptive_avg_pool2d(x_skel, (1, x_skel.size(3)))
         
+        # We need to transpose to match (B, -1, V) because view() after a 1x1 conv
+        # on (B, C, 1, V) naturally gives (B, C, V)
         proj_query = self.query_conv(x_rgb).view(B, -1, H*W).permute(0, 2, 1)
         proj_key = self.key_conv(x_skel_pool).view(B, -1, x_skel.size(3))
         
