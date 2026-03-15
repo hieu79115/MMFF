@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import timm 
-from models.attention import CrossModalAttention
+from models.attention import MultiHeadCrossModalAttention
 
 class RGBStream_Base(nn.Module):
     def __init__(self, skel_channels=256):
@@ -14,8 +14,14 @@ class RGBStream_Base(nn.Module):
         # Xception trả về feature map có 2048 channels ở lớp cuối cùng
         out_channels = 2048
         
-        # Cross-Attention Module
-        self.cross_att = CrossModalAttention(rgb_channels=out_channels, skel_channels=skel_channels)
+        # Advanced Cross-Attention Module with Multi-Head & Spatial Refinement
+        self.cross_att = MultiHeadCrossModalAttention(
+            rgb_channels=out_channels, 
+            skel_channels=skel_channels,
+            inter_channels=512,
+            num_heads=8,
+            dropout=0.1
+        )
         
         # Pooling để chuyển về vector
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))

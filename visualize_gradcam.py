@@ -91,7 +91,7 @@ def main():
     target_layers_crossattention = [wrapper.model.rgb_encoder.cross_att]
 
     # Target Layer: Lớp Query Conv trong Cross-Attention 
-    target_layers_before = [wrapper.model.rgb_encoder.cross_att.query_conv]
+    target_layers_before = [wrapper.model.rgb_encoder.cross_att.q_conv]
 
     # Quyết định target đánh dấu grad-cam
     if args.target_class is not None:
