@@ -16,6 +16,10 @@ class RGBStream_Base(nn.Module):
         
         # Cross-Attention Module
         self.cross_att = CrossModalAttention(rgb_channels=out_channels, skel_channels=skel_channels)
+
+        # Expose feature maps for Grad-CAM (no-op layers)
+        self.before_cross = nn.Identity()
+        self.after_cross = nn.Identity()
         
         # Pooling để chuyển về vector
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
@@ -25,11 +29,11 @@ class RGBStream_Base(nn.Module):
         features = self.backbone(x_rgb)
         
         # Ta lấy cái cuối cùng (feature map sâu nhất)
-        f_rgb_map = features[-1] 
+        f_rgb_map = self.before_cross(features[-1])
         # Shape dự kiến: (Batch, 2048, 10, 10) với ảnh đầu vào 299x299
         
         # Áp dụng Cross-Attention (Skel hướng dẫn RGB)
-        f_rgb_guided = self.cross_att(f_rgb_map, x_skel_feature_map)
+        f_rgb_guided = self.after_cross(self.cross_att(f_rgb_map, x_skel_feature_map))
         
         # Pooling & Flatten
         f_rgb_vec = self.avg_pool(f_rgb_guided).flatten(1)

@@ -30,11 +30,12 @@ class FocalLoss(nn.Module):
                         'none' | 'mean' | 'sum'. Default: 'mean'
     """
     
-    def __init__(self, alpha=0.25, gamma=2.0, reduction='mean'):
+    def __init__(self, alpha=0.25, gamma=2.0, reduction='mean', ignore_index: int = -100):
         super().__init__()
         self.alpha = alpha
         self.gamma = gamma
         self.reduction = reduction
+        self.ignore_index = ignore_index
         
     def forward(self, inputs, targets):
         """
@@ -48,14 +49,30 @@ class FocalLoss(nn.Module):
         Returns:
             torch.Tensor: Computed focal loss
         """
-        # Compute standard cross entropy loss
-        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
-        
-        # Get probability of true class
-        pt = torch.exp(-ce_loss)
-        
-        # Compute focal loss: alpha * (1 - pt)^gamma * ce_loss
-        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
+        # Multi-class focal loss (stable): use log_softmax + gather
+        log_probs = F.log_softmax(inputs, dim=-1)  # (N, C)
+        targets = targets.long()
+
+        valid = targets != self.ignore_index
+        if valid.sum() == 0:
+            return inputs.new_zeros(())
+
+        log_pt = log_probs[valid].gather(1, targets[valid].unsqueeze(1)).squeeze(1)  # (Nv,)
+        pt = log_pt.exp()
+        ce_loss = -log_pt  # (Nv,)
+
+        # alpha can be:
+        # - scalar (float)
+        # - per-class tensor/list of shape (C,)
+        alpha = self.alpha
+        if isinstance(alpha, (list, tuple)):
+            alpha = torch.tensor(alpha, dtype=inputs.dtype, device=inputs.device)
+        if torch.is_tensor(alpha):
+            alpha_t = alpha.gather(0, targets[valid])
+        else:
+            alpha_t = inputs.new_full((ce_loss.shape[0],), float(alpha))
+
+        focal_loss = alpha_t * (1.0 - pt).pow(self.gamma) * ce_loss
         
         if self.reduction == 'mean':
             return focal_loss.mean()

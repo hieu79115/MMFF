@@ -88,10 +88,10 @@ def main():
     wrapper = ModelWrapper(model, skel_input).to(DEVICE)
 
     # Target Layer: Lớp Cross-Attention trong RGB encoder 
-    target_layers_crossattention = [wrapper.model.rgb_encoder.cross_att]
+    target_layers_crossattention = [wrapper.model.rgb_encoder.after_cross]
 
     # Target Layer: Lớp Query Conv trong Cross-Attention 
-    target_layers_before = [wrapper.model.rgb_encoder.cross_att.query_conv]
+    target_layers_before = [wrapper.model.rgb_encoder.before_cross]
 
     # Quyết định target đánh dấu grad-cam
     if args.target_class is not None:
@@ -113,8 +113,10 @@ def main():
 
     # Hiển thị
     rgb_img = np.transpose(rgb_input[0].cpu().numpy(), (1, 2, 0))
-    # Denormalize ImageNet RGB (Mean=[0.5, 0.5, 0.5], Std=[0.5, 0.5, 0.5]) config from dataset.py
-    rgb_img = rgb_img * 0.5 + 0.5 
+    # Denormalize ImageNet normalization used in dataset.py
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    rgb_img = (rgb_img * std) + mean
     rgb_img = np.clip(rgb_img, 0, 1)
 
     visualization_after = show_cam_on_image(rgb_img, grayscale_cam_after, use_rgb=True)
