@@ -20,13 +20,22 @@ class FusionTransformer(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=3)
         
-        # Deeper MLP head with GELU activation and intermediate layer
+        # Deeper MLP head with GELU activation and intermediate layer for CLS token
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(embed_dim),
             nn.Linear(embed_dim, embed_dim),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(embed_dim, num_classes)
+        )
+
+        # Modality-specific classification head (shared for skeleton & RGB token)
+        self.modality_head = nn.Linear(embed_dim, num_classes)
+
+        # Gating network để học trọng số giữa hai modality dựa trên token sau fusion
+        self.gate = nn.Sequential(
+            nn.LayerNorm(embed_dim * 2),
+            nn.Linear(embed_dim * 2, 2)
         )
 
     def forward(self, f_skel, f_rgb):
@@ -38,8 +47,28 @@ class FusionTransformer(nn.Module):
         x = torch.cat((cls_tokens, token_skel, token_rgb), dim=1)
         
         x = self.transformer(x)
-        
+
+        # Token [CLS] dùng cho classification toàn cục
         cls_out = x[:, 0]
-        logits = self.mlp_head(cls_out)
-        
+        logits_cls = self.mlp_head(cls_out)
+
+        # Token modality sau fusion
+        skel_token = x[:, 1]
+        rgb_token = x[:, 2]
+
+        # Logits riêng cho từng modality
+        logits_skel = self.modality_head(skel_token)
+        logits_rgb = self.modality_head(rgb_token)
+
+        # Gating theo độ tin cậy tương đối của hai modality
+        gate_input = torch.cat([skel_token, rgb_token], dim=-1)
+        gates = torch.softmax(self.gate(gate_input), dim=-1)  # (B, 2)
+
+        # Kết hợp logits của hai modality theo trọng số học được
+        gates = gates.unsqueeze(-1)  # (B, 2, 1)
+        logits_modal = gates[:, 0] * logits_skel + gates[:, 1] * logits_rgb
+
+        # Tổng hợp: CLS head + gated modality head
+        logits = logits_cls + logits_modal
+
         return logits

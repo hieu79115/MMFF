@@ -19,23 +19,25 @@ class CrossModalAttention(nn.Module):
 
     def forward(self, x_rgb, x_skel):
         B, C_r, H, W = x_rgb.size()
-        
-        # Fix: Pool the temporal dimension (T) to 1 and preserve the joint dimension (V)
-        # Assuming x_skel is (B, C, T, V). T is height, V is width.
-        x_skel_pool = F.adaptive_avg_pool2d(x_skel, (1, x_skel.size(3)))
-        
-        # We need to transpose to match (B, -1, V) because view() after a 1x1 conv
-        # on (B, C, 1, V) naturally gives (B, C, V)
-        proj_query = self.query_conv(x_rgb).view(B, -1, H*W).permute(0, 2, 1)
-        proj_key = self.key_conv(x_skel_pool).view(B, -1, x_skel.size(3))
-        
-        energy = torch.bmm(proj_query, proj_key)
+        # x_skel: (B, C_s, T, V) – giữ nguyên chiều thời gian để attention học tương quan spatio-temporal
+        B_s, C_s, T, V = x_skel.size()
+        assert B_s == B, "RGB and skeleton batch size must match"
+
+        # Query: mỗi vị trí trên feature map RGB là một token
+        proj_query = self.query_conv(x_rgb).view(B, -1, H * W).permute(0, 2, 1)  # (B, HW, D)
+
+        # Key/Value: toàn bộ chuỗi thời gian T và khớp V của skeleton -> T*V tokens
+        proj_key = self.key_conv(x_skel).view(B, -1, T * V)                      # (B, D, T*V)
+        proj_value = self.value_conv(x_skel).view(B, C_r, T * V)                 # (B, C_r, T*V)
+
+        # Dot-product attention giữa từng vị trí RGB và toàn bộ (T,V) skeleton
+        energy = torch.bmm(proj_query, proj_key) * self.scale                    # (B, HW, T*V)
         attention = self.softmax(energy)
-        
-        proj_value = self.value_conv(x_skel_pool).view(B, -1, x_skel.size(3))
-        
-        out = torch.bmm(proj_value, attention.permute(0, 2, 1))
+        attention = self.attn_dropout(attention)
+
+        # Ánh xạ ngược về không gian RGB: kết hợp value skeleton cho từng vị trí RGB
+        out = torch.bmm(proj_value, attention.permute(0, 2, 1))                  # (B, C_r, HW)
         out = out.view(B, C_r, H, W)
-        
+
         out = self.gamma * out + x_rgb
         return out
