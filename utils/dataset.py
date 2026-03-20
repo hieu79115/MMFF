@@ -202,12 +202,24 @@ def _to_pil_rgb(img):
     arr = np.clip(arr, 0, 255).astype(np.uint8)
     return Image.fromarray(arr).convert('RGB')
 
+class AddGaussianNoise(object):
+    def __init__(self, mean=0., std=1.):
+        self.std = std
+        self.mean = mean
+        
+    def __call__(self, tensor):
+        return tensor + torch.randn(tensor.size()) * self.std + self.mean
+    
+    def __repr__(self):
+        return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
+
 class MMFFDataset(Dataset):
     def __init__(self, root_dir='./data', mode='train', is_dummy=True, 
                  num_samples=100, num_classes=60, dataset='ntu',
                  val_ratio: float = 0.1, split_seed: int = 42,
                  stage: str | None = None,
-                 num_frames: int = 32):
+                 num_frames: int = 32,
+                 noise_std: float = 0.01):
         
         # Supported modes:
         # - 'train': training split (from train_* files)
@@ -221,6 +233,7 @@ class MMFFDataset(Dataset):
         self.root_dir = root_dir
         self.num_frames = int(num_frames)
         self.img_size = 299       
+        self.noise_std = float(noise_std)
 
         self.val_ratio = float(val_ratio)
         self.split_seed = int(split_seed)
@@ -241,13 +254,16 @@ class MMFFDataset(Dataset):
 
         # Augmentation cho ảnh RGB (Mạnh hơn)
         if self.mode == 'train':
-            self.transform = transforms.Compose([
+            train_transforms = [
                 transforms.Resize((self.img_size, self.img_size)),
                 transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2), # Đổi màu nhẹ
                 transforms.RandomHorizontalFlip(p=0.5), # Lật ảnh
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ])
+            ]
+            if self.noise_std > 0:
+                train_transforms.append(AddGaussianNoise(0., self.noise_std))
+            self.transform = transforms.Compose(train_transforms)
         else:
             self.transform = transforms.Compose([
                 transforms.Resize((self.img_size, self.img_size)),
@@ -309,11 +325,14 @@ class MMFFDataset(Dataset):
                 vr = 0.1
             vr = max(0.0, min(0.5, float(vr)))
 
-            val_count = int(round(vr * n))
-            if n >= 2:
-                val_count = max(1, min(n - 1, val_count))
-            else:
+            if vr == 0.0:
                 val_count = 0
+            else:
+                val_count = int(round(vr * n))
+                if n >= 2:
+                    val_count = max(1, min(n - 1, val_count))
+                else:
+                    val_count = 0
 
             rng = np.random.RandomState(self.split_seed)
             perm = rng.permutation(n)
@@ -371,12 +390,15 @@ class MMFFDataset(Dataset):
             vr = 0.1
         vr = max(0.0, min(0.5, float(vr)))
 
-        val_count = int(round(vr * n))
-        # Ensure both splits are non-empty when possible.
-        if n >= 2:
-            val_count = max(1, min(n - 1, val_count))
-        else:
+        if vr == 0.0:
             val_count = 0
+        else:
+            val_count = int(round(vr * n))
+            # Ensure both splits are non-empty when possible.
+            if n >= 2:
+                val_count = max(1, min(n - 1, val_count))
+            else:
+                val_count = 0
 
         rng = np.random.RandomState(self.split_seed)
         perm = rng.permutation(n)
@@ -424,16 +446,16 @@ class MMFFDataset(Dataset):
                 # NTU: giữ chiều M -> (C, T, V, M)
                 skel_ctvm = _skeleton_to_c_t_v_m(skel_raw, num_joints=self.num_joints, num_persons=self.num_persons)
                 skel_ctvm = _temporal_resample_c_t_v_m(skel_ctvm, self.num_frames)
-                if self.mode == 'train':
-                    noise = np.random.normal(0, 0.01, skel_ctvm.shape).astype(np.float32)
+                if self.mode == 'train' and self.noise_std > 0:
+                    noise = np.random.normal(0, self.noise_std, skel_ctvm.shape).astype(np.float32)
                     skel_ctvm = skel_ctvm + noise
                 skel_tensor = torch.from_numpy(skel_ctvm).float()
             else:
                 # UTD, NW-UCLA: chỉ 1 người -> (C, T, V)
                 skel_c_t_v = _skeleton_to_c_t_v(skel_raw, num_joints=self.num_joints)
                 skel_c_t_v = _temporal_resample_c_t_v(skel_c_t_v, self.num_frames)
-                if self.mode == 'train':
-                    noise = np.random.normal(0, 0.01, skel_c_t_v.shape).astype(np.float32)
+                if self.mode == 'train' and self.noise_std > 0:
+                    noise = np.random.normal(0, self.noise_std, skel_c_t_v.shape).astype(np.float32)
                     skel_c_t_v = skel_c_t_v + noise
                 skel_tensor = torch.from_numpy(skel_c_t_v).float()
 
@@ -452,15 +474,15 @@ class MMFFDataset(Dataset):
         if self.has_multi_person:
             # NTU: giữ tất cả M persons -> skeleton_data shape: (N, C, T, V, M)
             skel = self.skeleton_data[real_idx]  # (C, T, V, M)
-            if self.mode == 'train':
-                noise = np.random.normal(0, 0.01, skel.shape)
+            if self.mode == 'train' and self.noise_std > 0:
+                noise = np.random.normal(0, self.noise_std, skel.shape)
                 skel = skel + noise
             skel_tensor = torch.from_numpy(np.array(skel)).float()
         else:
             # UTD, NW-UCLA: chỉ lấy person đầu tiên -> (C, T, V)
             skel = self.skeleton_data[real_idx, :, :, :, 0]
-            if self.mode == 'train':
-                noise = np.random.normal(0, 0.01, skel.shape)
+            if self.mode == 'train' and self.noise_std > 0:
+                noise = np.random.normal(0, self.noise_std, skel.shape)
                 skel = skel + noise
             skel_tensor = torch.from_numpy(np.array(skel)).float()
 

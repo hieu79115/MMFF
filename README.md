@@ -40,8 +40,8 @@ The dataset loader [utils/dataset.py](utils/dataset.py) expects exported files u
 - `test_data.npy` + `test_label.pkl`: held-out test set
 - `images/`: RGB frames (one image per sample name from the `.pkl`)
 
-During training, validation is a deterministic split from the training pool:
-- `mode='train'` and `mode='val'` both read from `train_*` and split using `--val_ratio` + `--split_seed`.
+During training, evaluation is done directly on the test set (`mode='test'`) to maximize training data.
+- `mode='train'` reads from `train_*` pool without splitting (default `--val_ratio 0.0`).
 - `mode='test'` reads from `test_*` (and falls back to legacy `val_*` if present).
 
 Important defaults in [utils/dataset.py](utils/dataset.py):
@@ -80,8 +80,9 @@ Key training options:
 - `--dataset`: dataset name (default: `ntu`)
 - `--stage`: `skeleton` | `rgb` | `fusion` (default: `fusion`)
 - `--epochs`, `--batch_size`, `--lr`
-- `--val_ratio`: validation ratio split from train pool (default: `0.1`)
+- `--val_ratio`: ratio to split from train pool if you still want a validation set (default: `0.0`)
 - `--split_seed`: seed for deterministic train/val split (default: `42`)
+- `--gaussian_noise`: standard deviation of Gaussian noise for augmentation on both RGB and Skeleton (default: `0.01`)
 
 Outputs:
 - Best weights: `best_{stage}_{dataset}.pth`
