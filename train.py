@@ -16,9 +16,9 @@ from utils.model_stats import print_model_stats
 
 def plot_history(history, save_path):
     plt.figure(figsize=(12, 5))
-    plt.subplot(1, 2, 1); plt.plot(history['train_acc'], label='Train'); plt.plot(history['val_acc'], label='Val')
+    plt.subplot(1, 2, 1); plt.plot(history['train_acc'], label='Train'); plt.plot(history['test_acc'], label='Test')
     plt.title('Accuracy'); plt.legend()
-    plt.subplot(1, 2, 2); plt.plot(history['train_loss'], label='Train'); plt.plot(history['val_loss'], label='Val')
+    plt.subplot(1, 2, 2); plt.plot(history['train_loss'], label='Train'); plt.plot(history['test_loss'], label='Test')
     plt.title('Loss'); plt.legend()
     plt.savefig(save_path); plt.close()
 
@@ -69,8 +69,9 @@ def main():
     parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
     parser.add_argument('--dropout', type=float, default=0.0, help='Dropout for ST-GCN blocks (0.0-0.8 typical)')
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
-    parser.add_argument('--val_ratio', type=float, default=0.1, help='Validation ratio split from training set')
+    parser.add_argument('--val_ratio', type=float, default=0.0, help='Validation ratio split from training set (set to 0 to use all train data)')
     parser.add_argument('--split_seed', type=int, default=42, help='Random seed for train/val split')
+    parser.add_argument('--gaussian_noise', type=float, default=0.01, help='Standard deviation of Gaussian noise added during training (RGB & Skeleton)')
     args = parser.parse_args()
     
     # Set defaults from config if not specified
@@ -93,20 +94,22 @@ def main():
         split_seed=args.split_seed,
         stage=args.stage,
         num_frames=args.num_frames,
+        noise_std=args.gaussian_noise,
     )
-    val_ds = MMFFDataset(
+    test_ds = MMFFDataset(
         root_dir=args.data_dir,
-        mode='val',
+        mode='test',
         is_dummy=False,
         num_classes=NUM_CLASSES,
         dataset=args.dataset,
-        val_ratio=args.val_ratio,
+        val_ratio=0.0,
         split_seed=args.split_seed,
         stage=args.stage,
         num_frames=args.num_frames,
+        noise_std=args.gaussian_noise,
     )
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
+    test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False)
     
     model = MMFF_Net_Advanced(
         num_classes=NUM_CLASSES,
@@ -164,7 +167,7 @@ def main():
     )
 
     best_acc = 0.0
-    history = {'train_acc': [], 'val_acc':[], 'train_loss':[], 'val_loss':[]}
+    history = {'train_acc': [], 'test_acc':[], 'train_loss':[], 'test_loss':[]}
     
     print(f"\n=== START TRAINING STAGE: {args.stage.upper()} ===")
     print(f"Epochs: {args.epochs}, Initial LR: {args.lr}, Batch size: {args.batch_size}")
@@ -182,7 +185,7 @@ def main():
             print(f"Learning rate reduced to:  {optimizer.param_groups[0]['lr']:.6f}")
         
         train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, DEVICE, args.stage)
-        val_loss, val_acc = validate(model, val_loader, criterion, DEVICE, args.stage)
+        test_loss, test_acc = validate(model, test_loader, criterion, DEVICE, args.stage)
         
         # Step schedulers
         if epoch < Config.WARMUP_EPOCHS:
@@ -195,14 +198,14 @@ def main():
         print(
             f"Ep {epoch+1}/{args.epochs} | LR: {current_lr:.6f} | "
             f"Train:  {train_acc:.2f}% (loss {train_loss:.4f}) | "
-            f"Val: {val_acc:.2f}% (loss {val_loss:.4f})"
+            f"Test: {test_acc:.2f}% (loss {test_loss:.4f})"
         )
         
-        history['train_acc'].append(train_acc); history['val_acc'].append(val_acc)
-        history['train_loss'].append(train_loss); history['val_loss'].append(val_loss)
+        history['train_acc'].append(train_acc); history['test_acc'].append(test_acc)
+        history['train_loss'].append(train_loss); history['test_loss'].append(test_loss)
         
-        if val_acc > best_acc: 
-            best_acc = val_acc
+        if test_acc > best_acc: 
+            best_acc = test_acc
             # Lưu tên file theo stage
             save_name = f"best_{args.stage}_{args.dataset}.pth"
             torch.save(model.state_dict(), save_name)
