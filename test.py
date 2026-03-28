@@ -33,6 +33,14 @@ def plot_confusion_matrix(cm, classes, filename):
 def get_class_names(dataset: str, num_classes: int):
     dataset = dataset.lower()
     
+    if dataset == 'sumv2':
+        return [
+            'raising_hand',
+            'reading',
+            'sleeping',
+            'writing',
+        ]
+
     if dataset == 'nw-ucla':
         # NW-UCLA (Northwestern-UCLA Multiview Action 3D) - 10 classes
         return [
@@ -152,7 +160,7 @@ def main():
     # --- 1. Cấu hình tham số dòng lệnh ---
     parser = argparse.ArgumentParser(description='Test MMFF Model')
     parser.add_argument('--data_dir', type=str, default='./data', help='Dataset directory containing train_data.pkl/test_data.pkl')
-    parser.add_argument('--dataset', type=str, default='ntu', choices=['ntu', 'utd', 'nw-ucla'], 
+    parser.add_argument('--dataset', type=str, default='ntu', choices=['ntu', 'utd', 'nw-ucla', 'sumv2'], 
                         help='dataset name: ntu, utd, or nw-ucla')
     parser.add_argument('--stage', type=str, default='fusion', choices=['skeleton', 'rgb', 'fusion'],
                         help="Which stage checkpoint to evaluate: 'skeleton', 'rgb', or 'fusion'")

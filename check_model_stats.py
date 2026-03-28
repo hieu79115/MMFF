@@ -28,7 +28,7 @@ def main():
     parser = argparse.ArgumentParser(description='Check MMFF Model Parameters and FLOPs')
     
     # Dataset và Stage
-    parser.add_argument('--dataset', type=str, default='ntu', choices=['ntu', 'utd'],
+    parser.add_argument('--dataset', type=str, default='ntu', choices=['ntu', 'utd', 'nw-ucla', 'sumv2'],
                        help='Dataset name:  ntu (60 classes, 25 joints) or utd (27 classes, 20 joints)')
     parser.add_argument('--stage', type=str, default='fusion', choices=['skeleton', 'rgb', 'fusion'],
                        help='Training stage to check')

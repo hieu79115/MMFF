@@ -68,7 +68,8 @@ class Config:
     NUM_CLASSES = {
         'ntu': 60,      # NTU RGB+D dataset (60 action classes)
         'utd': 27,      # UTD-MHAD dataset (27 action classes)
-        'nw-ucla': 10   # Northwestern-UCLA dataset (10 action classes)
+        'nw-ucla': 10,  # Northwestern-UCLA dataset (10 action classes)
+        'sumv2': 4,     # SUM-V2 upper-body (4 classes, 13 joints)
     }
     
     # Data preprocessing parameters

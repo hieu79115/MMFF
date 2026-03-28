@@ -246,6 +246,7 @@ class MMFFDataset(Dataset):
         
         if self.dataset_name == 'utd': self.num_joints = 20
         elif self.dataset_name == 'nw-ucla': self.num_joints = 21
+        elif self.dataset_name == 'sumv2': self.num_joints = 13
         else: self.num_joints = 25
 
         # NTU datasets có chiều M (multi-person)

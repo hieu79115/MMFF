@@ -56,6 +56,17 @@ class Graph:
             ]
             # Chuyển index từ 1-based sang 0-based
             self.edge = [(i - 1, j - 1) for (i, j) in neighbor_link] + self_link
+
+        elif self.dataset == 'sumv2':
+            # 13 joints: COCO-17 upper subset (no legs) — nose, eyes, ears, shoulders, elbows, wrists, hips
+            self.num_node = 13
+            self_link = [(i, i) for i in range(self.num_node)]
+            neighbor_link = [
+                (1, 2), (1, 3), (2, 4), (3, 5),  # head
+                (6, 8), (8, 10), (7, 9), (9, 11),  # arms
+                (6, 7), (6, 12), (7, 13), (12, 13),  # shoulders / hips
+            ]
+            self.edge = [(i - 1, j - 1) for (i, j) in neighbor_link] + self_link
         else:
             raise ValueError("Dataset không hỗ trợ")
 

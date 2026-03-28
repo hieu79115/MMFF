@@ -32,7 +32,12 @@ DATASET_CONFIG = {
         'num_classes': 10,
         'num_joints': 21,
         'dataset_name': 'Northwestern-UCLA'
-    }
+    },
+    'sumv2': {
+        'num_classes': 4,
+        'num_joints': 13,
+        'dataset_name': 'SUM-V2 (upper-body)',
+    },
 }
 
 
