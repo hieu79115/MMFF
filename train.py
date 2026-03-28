@@ -14,11 +14,11 @@ from config import Config
 from utils.losses import get_criterion
 from utils.model_stats import print_model_stats
 
-def plot_history(history, save_path):
+def plot_history(history, save_path, eval_label='Eval'):
     plt.figure(figsize=(12, 5))
-    plt.subplot(1, 2, 1); plt.plot(history['train_acc'], label='Train'); plt.plot(history['test_acc'], label='Test')
+    plt.subplot(1, 2, 1); plt.plot(history['train_acc'], label='Train'); plt.plot(history['eval_acc'], label=eval_label)
     plt.title('Accuracy'); plt.legend()
-    plt.subplot(1, 2, 2); plt.plot(history['train_loss'], label='Train'); plt.plot(history['test_loss'], label='Test')
+    plt.subplot(1, 2, 2); plt.plot(history['train_loss'], label='Train'); plt.plot(history['eval_loss'], label=eval_label)
     plt.title('Loss'); plt.legend()
     plt.savefig(save_path); plt.close()
 
@@ -84,6 +84,7 @@ def main():
     NUM_CLASSES = Config.get_num_classes(args.dataset)
     
     # Dataset & Loader
+    use_val = args.val_ratio > 0.0
     train_ds = MMFFDataset(
         root_dir=args.data_dir,
         mode='train',
@@ -96,20 +97,23 @@ def main():
         num_frames=args.num_frames,
         noise_std=args.gaussian_noise,
     )
-    test_ds = MMFFDataset(
+    # val_ratio > 0: epoch metrics & best checkpoint use validation split from train pool.
+    # val_ratio == 0: use held-out test set (same split as test.py).
+    eval_ds = MMFFDataset(
         root_dir=args.data_dir,
-        mode='test',
+        mode='val' if use_val else 'test',
         is_dummy=False,
         num_classes=NUM_CLASSES,
         dataset=args.dataset,
-        val_ratio=0.0,
+        val_ratio=args.val_ratio if use_val else 0.0,
         split_seed=args.split_seed,
         stage=args.stage,
         num_frames=args.num_frames,
         noise_std=args.gaussian_noise,
     )
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
-    test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False)
+    eval_loader = DataLoader(eval_ds, batch_size=args.batch_size, shuffle=False)
+    eval_label = 'Val' if use_val else 'Test'
     
     model = MMFF_Net_Advanced(
         num_classes=NUM_CLASSES,
@@ -167,11 +171,12 @@ def main():
     )
 
     best_acc = 0.0
-    history = {'train_acc': [], 'test_acc':[], 'train_loss':[], 'test_loss':[]}
+    history = {'train_acc': [], 'eval_acc': [], 'train_loss': [], 'eval_loss': []}
     
     print(f"\n=== START TRAINING STAGE: {args.stage.upper()} ===")
     print(f"Epochs: {args.epochs}, Initial LR: {args.lr}, Batch size: {args.batch_size}")
     print(f"Loss function: {'Focal Loss' if Config.USE_FOCAL_LOSS else 'CrossEntropy with Label Smoothing'}")
+    print(f"Epoch evaluation: {'validation split (val_ratio=' + str(args.val_ratio) + ')' if use_val else 'held-out test set'}")
     
     for epoch in range(args.epochs):
         # Gradual unfreezing for RGB stage
@@ -185,7 +190,7 @@ def main():
             print(f"Learning rate reduced to:  {optimizer.param_groups[0]['lr']:.6f}")
         
         train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, DEVICE, args.stage)
-        test_loss, test_acc = validate(model, test_loader, criterion, DEVICE, args.stage)
+        eval_loss, eval_acc = validate(model, eval_loader, criterion, DEVICE, args.stage)
         
         # Step schedulers
         if epoch < Config.WARMUP_EPOCHS:
@@ -198,14 +203,14 @@ def main():
         print(
             f"Ep {epoch+1}/{args.epochs} | LR: {current_lr:.6f} | "
             f"Train:  {train_acc:.2f}% (loss {train_loss:.4f}) | "
-            f"Test: {test_acc:.2f}% (loss {test_loss:.4f})"
+            f"{eval_label}: {eval_acc:.2f}% (loss {eval_loss:.4f})"
         )
         
-        history['train_acc'].append(train_acc); history['test_acc'].append(test_acc)
-        history['train_loss'].append(train_loss); history['test_loss'].append(test_loss)
+        history['train_acc'].append(train_acc); history['eval_acc'].append(eval_acc)
+        history['train_loss'].append(train_loss); history['eval_loss'].append(eval_loss)
         
-        if test_acc > best_acc: 
-            best_acc = test_acc
+        if eval_acc > best_acc:
+            best_acc = eval_acc
             # Lưu tên file theo stage
             save_name = f"best_{args.stage}_{args.dataset}.pth"
             torch.save(model.state_dict(), save_name)
@@ -215,7 +220,8 @@ def main():
     dropout_tag = str(float(args.dropout)).replace('.', 'p')
     plot_history(
         history,
-        f'history_{args.stage}_{args.dataset}_T{args.num_frames}_ei{args.edge_importance}_do{dropout_tag}.png'
+        f'history_{args.stage}_{args.dataset}_T{args.num_frames}_ei{args.edge_importance}_do{dropout_tag}.png',
+        eval_label=eval_label,
     )
 
     print("\n" + "="*35)
