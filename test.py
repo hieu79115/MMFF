@@ -11,6 +11,11 @@ def plot_confusion_matrix(cm, classes, filename):
     fig_w = max(10, min(24, 0.6 * n))
     fig_h = max(8, min(24, 0.55 * n))
     plt.figure(figsize=(fig_w, fig_h))
+    
+    # Tăng kích thước chữ dựa trên số class
+    font_size = 20 if n <= 10 else max(8, 20 - (n * 0.2))
+    sns.set(font_scale=1.5 if n <= 10 else 0.8)
+    
     sns.heatmap(
         cm,
         annot=True,
@@ -18,15 +23,17 @@ def plot_confusion_matrix(cm, classes, filename):
         cmap='Blues',
         xticklabels=classes,
         yticklabels=classes,
+        annot_kws={"size": font_size}
     )
-    plt.xticks(rotation=45, ha='right')
-    plt.yticks(rotation=0)
-    plt.ylabel('True Label')
-    plt.xlabel('Predicted Label')
-    plt.title('Confusion Matrix')
+    plt.xticks(rotation=45, ha='right', fontsize=font_size * 0.8)
+    plt.yticks(rotation=0, fontsize=font_size * 0.8)
+    plt.ylabel('True Label', fontsize=font_size)
+    plt.xlabel('Predicted Label', fontsize=font_size)
+    plt.title('Confusion Matrix', fontsize=font_size * 1.2)
     plt.tight_layout()
     plt.savefig(filename, dpi=200)
     plt.close()
+    sns.reset_orig()
     print(f"Saved confusion matrix to {filename}")
 
 
