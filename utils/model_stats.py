@@ -38,6 +38,11 @@ DATASET_CONFIG = {
         'num_joints': 13,
         'dataset_name': 'SUM-V2 (upper-body)',
     },
+    'sgu-sb': {
+        'num_classes': 7,
+        'num_joints': 13,
+        'dataset_name': 'SGU-SB',
+    },
 }
 
 

@@ -70,6 +70,7 @@ class Config:
         'utd': 27,      # UTD-MHAD dataset (27 action classes)
         'nw-ucla': 10,  # Northwestern-UCLA dataset (10 action classes)
         'sumv2': 4,     # SUM-V2 upper-body (4 classes, 13 joints)
+        'sgu-sb': 7,    # SGU-SB dataset (7 action classes, same skeleton as sumv2)
     }
     
     # Data preprocessing parameters

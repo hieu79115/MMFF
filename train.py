@@ -62,7 +62,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='./data', help='Dataset directory containing train_data.pkl/test_data.pkl')
     parser.add_argument('--dataset', type=str, default='ntu',
-                        choices=['ntu', 'utd', 'nw-ucla', 'sumv2'])
+                        choices=['ntu', 'utd', 'nw-ucla', 'sumv2', 'sgu-sb'])
     parser.add_argument('--stage', type=str, default='fusion', choices=['skeleton', 'rgb', 'fusion'])
     parser.add_argument('--epochs', type=int, default=None, help='Epochs (uses config default if not specified)')
     parser.add_argument('--batch_size', type=int, default=Config.BATCH_SIZE)

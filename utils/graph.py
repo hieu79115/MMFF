@@ -57,7 +57,7 @@ class Graph:
             # Chuyển index từ 1-based sang 0-based
             self.edge = [(i - 1, j - 1) for (i, j) in neighbor_link] + self_link
 
-        elif self.dataset == 'sumv2':
+        elif self.dataset in ['sumv2', 'sgu-sb']:
             # 13 joints: COCO-17 upper subset (no legs) — nose, eyes, ears, shoulders, elbows, wrists, hips
             self.num_node = 13
             self_link = [(i, i) for i in range(self.num_node)]

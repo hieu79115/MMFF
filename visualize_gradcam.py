@@ -26,7 +26,7 @@ class ModelWrapper(torch.nn.Module):
 def main():
     parser = argparse.ArgumentParser(description='Visualize Grad-CAM for MMFF Model')
     parser.add_argument('--data_dir', type=str, default='', help='Dataset directory containing train_data.pkl/test_data.pkl')
-    parser.add_argument('--dataset', type=str, default='ntu', choices=['ntu', 'utd', 'nw-ucla', 'sumv2'], 
+    parser.add_argument('--dataset', type=str, default='ntu', choices=['ntu', 'utd', 'nw-ucla', 'sumv2', 'sgu-sb'], 
                         help='dataset name: ntu, utd, or nw-ucla')
     parser.add_argument('--model_path', type=str, default='', help='Path to trained model weights (.pth)')
     parser.add_argument('--is_dummy', action='store_true', help='Use dummy data for testing without real dataset')
