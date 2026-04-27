@@ -9,12 +9,19 @@ def _ablation_tag(fusion_type: str, cross_attention: str) -> str:
 
 
 def _checkpoint_candidates(stage: str, dataset: str, fusion_type: str, cross_attention: str) -> list[str]:
-    tag = _ablation_tag(fusion_type, cross_attention)
-    return [
-        f"best_{stage}_{dataset}_{tag}.pth",
+    candidates = []
+    if stage == 'fusion':
+        candidates.append(f"best_{stage}_{dataset}_{_ablation_tag(fusion_type, cross_attention)}.pth")
+    else:
+        candidates.append(f"best_{stage}_{dataset}_attn-{cross_attention}.pth")
+        # Backward compatibility with old naming that included fusion_type.
+        candidates.append(f"best_{stage}_{dataset}_{_ablation_tag(fusion_type, cross_attention)}.pth")
+
+    candidates.extend([
         f"best_{stage}_{dataset}.pth",
         f"best_model_{dataset}.pth",
-    ]
+    ])
+    return candidates
 
 
 def _first_existing_path(candidates: list[str]) -> str | None:

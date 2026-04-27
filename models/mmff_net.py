@@ -58,8 +58,11 @@ class MMFF_Net_Advanced(nn.Module):
         # --- Stage 2: Train riêng RGB ---
         # (Vẫn cần chạy Skeleton encoder để lấy Feature Map cho Cross-Attention, nhưng không update weight xương)
         if stage == 'rgb':
-            with torch.no_grad(): # Đóng băng nhánh xương
-                _, skel_map = self.skel_encoder(skel_input)
+            if self.rgb_encoder.cross_att is None:
+                skel_map = None
+            else:
+                with torch.no_grad(): # Đóng băng nhánh xương
+                    _, skel_map = self.skel_encoder(skel_input)
             
             rgb_vec = self.rgb_encoder(rgb_input, skel_map)
             return self.rgb_head(rgb_vec) # Chỉ trả về kết quả nhánh RGB

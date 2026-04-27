@@ -20,11 +20,19 @@ def _ablation_tag(fusion_type: str, cross_attention: str) -> str:
 
 
 def _checkpoint_candidates(stage: str, dataset: str, fusion_type: str, cross_attention: str) -> list[str]:
-    tag = _ablation_tag(fusion_type, cross_attention)
-    return [
-        f"best_{stage}_{dataset}_{tag}.pth",
-        f"best_{stage}_{dataset}.pth",
-    ]
+    # Stage-specific naming:
+    # - skeleton/rgb do not depend on fusion_type
+    # - fusion keeps fusion_type + cross_attention tag
+    candidates = []
+    if stage == 'fusion':
+        candidates.append(f"best_{stage}_{dataset}_{_ablation_tag(fusion_type, cross_attention)}.pth")
+    else:
+        candidates.append(f"best_{stage}_{dataset}_attn-{cross_attention}.pth")
+        # Backward compatibility with old naming that included fusion_type.
+        candidates.append(f"best_{stage}_{dataset}_{_ablation_tag(fusion_type, cross_attention)}.pth")
+
+    candidates.append(f"best_{stage}_{dataset}.pth")
+    return candidates
 
 
 def _first_existing_path(candidates: list[str]) -> str | None:
@@ -150,13 +158,16 @@ def main():
 
     # --- LOGIC LOAD WEIGHTS THEO GIAI ĐOẠN ---
     if args.stage == 'rgb':
-        # Load pre-trained Skeleton để hỗ trợ Attention (nhưng không train nó)
-        skeleton_ckpt = _first_existing_path(
-            _checkpoint_candidates('skeleton', args.dataset, args.fusion_type, args.cross_attention)
-        )
-        if skeleton_ckpt:
-            print(">> Loading best SKELETON weights for RGB training...")
-            model.load_state_dict(torch.load(skeleton_ckpt), strict=False)
+        # Load pre-trained Skeleton only when cross-attention is used.
+        if args.cross_attention != 'none':
+            skeleton_ckpt = _first_existing_path(
+                _checkpoint_candidates('skeleton', args.dataset, args.fusion_type, args.cross_attention)
+            )
+            if skeleton_ckpt:
+                print(">> Loading best SKELETON weights for RGB training...")
+                model.load_state_dict(torch.load(skeleton_ckpt), strict=False)
+        else:
+            print(">> Cross-attention disabled: skip loading SKELETON checkpoint for RGB stage.")
         # Initially freeze backbone for gradual unfreezing
         for param in model.rgb_encoder.backbone.parameters():
             param.requires_grad = False
@@ -248,7 +259,10 @@ def main():
         if eval_acc > best_acc:
             best_acc = eval_acc
             # Lưu tên file theo stage
-            save_name = f"best_{args.stage}_{args.dataset}_{_ablation_tag(args.fusion_type, args.cross_attention)}.pth"
+            if args.stage == 'fusion':
+                save_name = f"best_{args.stage}_{args.dataset}_{_ablation_tag(args.fusion_type, args.cross_attention)}.pth"
+            else:
+                save_name = f"best_{args.stage}_{args.dataset}_attn-{args.cross_attention}.pth"
             torch.save(model.state_dict(), save_name)
             print(f"Saved {save_name}!")
 
