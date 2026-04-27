@@ -5,6 +5,7 @@ import pickle
 import os
 from PIL import Image
 from torchvision import transforms
+from config import Config
 
 
 def _to_numpy(x):
@@ -229,7 +230,7 @@ class MMFFDataset(Dataset):
         self.is_dummy = is_dummy
         self.num_samples = num_samples
         self.num_classes = num_classes
-        self.dataset_name = dataset
+        self.dataset_name = Config.normalize_dataset(dataset)
         self.root_dir = root_dir
         self.num_frames = int(num_frames)
         self.img_size = 299       

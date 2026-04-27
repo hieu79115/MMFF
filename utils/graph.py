@@ -2,7 +2,7 @@ import numpy as np
 
 class Graph:
     def __init__(self, strategy='spatial', dataset='ntu'): # Thêm tham số dataset
-        self.dataset = dataset
+        self.dataset = (dataset or 'ntu').lower()
         self.get_edge()
         self.hop_size = 1
         self.get_adjacency(strategy)

@@ -72,6 +72,7 @@ class Config:
         'sumv2': 4,     # SUM-V2 upper-body (4 classes, 13 joints)
         'sgu-sb': 7,    # SGU-SB dataset (7 action classes, same skeleton as sumv2)
     }
+
     
     # Data preprocessing parameters
     NUM_FRAMES = 32   # Number of frames to resample skeleton sequences to
@@ -95,7 +96,13 @@ class Config:
     @classmethod
     def get_num_classes(cls, dataset: str) -> int:
         """Get number of classes for a given dataset"""
-        return cls.NUM_CLASSES.get(dataset.lower(), 60)
+        normalized = cls.normalize_dataset(dataset)
+        return cls.NUM_CLASSES.get(normalized, 60)
+
+    @classmethod
+    def normalize_dataset(cls, dataset: str) -> str:
+        """Normalize dataset name to canonical internal key."""
+        return (dataset or '').lower()
     
     @classmethod
     def get_epochs(cls, stage: str) -> int:

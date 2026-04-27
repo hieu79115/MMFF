@@ -14,6 +14,25 @@ from config import Config
 from utils.losses import get_criterion
 from utils.model_stats import print_model_stats
 
+
+def _ablation_tag(fusion_type: str, cross_attention: str) -> str:
+    return f"{fusion_type}_attn-{cross_attention}"
+
+
+def _checkpoint_candidates(stage: str, dataset: str, fusion_type: str, cross_attention: str) -> list[str]:
+    tag = _ablation_tag(fusion_type, cross_attention)
+    return [
+        f"best_{stage}_{dataset}_{tag}.pth",
+        f"best_{stage}_{dataset}.pth",
+    ]
+
+
+def _first_existing_path(candidates: list[str]) -> str | None:
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return None
+
 def plot_history(history, save_path, eval_label='Eval'):
     plt.figure(figsize=(12, 5))
     plt.subplot(1, 2, 1); plt.plot(history['train_acc'], label='Train'); plt.plot(history['eval_acc'], label=eval_label)
@@ -64,6 +83,8 @@ def main():
     parser.add_argument('--dataset', type=str, default='ntu',
                         choices=['ntu', 'utd', 'nw-ucla', 'sumv2', 'sgu-sb'])
     parser.add_argument('--stage', type=str, default='fusion', choices=['skeleton', 'rgb', 'fusion'])
+    parser.add_argument('--fusion_type', type=str, default='cmaf', choices=['cmaf', 'sum', 'average', 'concat'])
+    parser.add_argument('--cross_attention', type=str, default='normal', choices=['normal', 'none', 'reversed'])
     parser.add_argument('--epochs', type=int, default=None, help='Epochs (uses config default if not specified)')
     parser.add_argument('--batch_size', type=int, default=Config.BATCH_SIZE)
     parser.add_argument('--lr', type=float, default=None, help='Learning rate (uses config default per stage)')
@@ -74,6 +95,7 @@ def main():
     parser.add_argument('--split_seed', type=int, default=42, help='Random seed for train/val split')
     parser.add_argument('--gaussian_noise', type=float, default=0.01, help='Standard deviation of Gaussian noise added during training (RGB & Skeleton)')
     args = parser.parse_args()
+    args.dataset = Config.normalize_dataset(args.dataset)
     
     # Set defaults from config if not specified
     if args.epochs is None:
@@ -121,15 +143,20 @@ def main():
         dataset=args.dataset,
         edge_importance_weighting=bool(args.edge_importance),
         stgcn_dropout=float(args.dropout),
+        fusion_type=args.fusion_type,
+        cross_attention_mode=args.cross_attention,
     )
     model.to(DEVICE)
 
     # --- LOGIC LOAD WEIGHTS THEO GIAI ĐOẠN ---
     if args.stage == 'rgb':
         # Load pre-trained Skeleton để hỗ trợ Attention (nhưng không train nó)
-        if os.path.exists(f'best_skeleton_{args.dataset}.pth'):
+        skeleton_ckpt = _first_existing_path(
+            _checkpoint_candidates('skeleton', args.dataset, args.fusion_type, args.cross_attention)
+        )
+        if skeleton_ckpt:
             print(">> Loading best SKELETON weights for RGB training...")
-            model.load_state_dict(torch.load(f'best_skeleton_{args.dataset}.pth'), strict=False)
+            model.load_state_dict(torch.load(skeleton_ckpt), strict=False)
         # Initially freeze backbone for gradual unfreezing
         for param in model.rgb_encoder.backbone.parameters():
             param.requires_grad = False
@@ -137,12 +164,19 @@ def main():
     
     elif args.stage == 'fusion': 
         # Load cả 2 thằng trước khi train tổng
-        if os.path.exists(f'best_skeleton_{args.dataset}.pth'):
+        skeleton_ckpt = _first_existing_path(
+            _checkpoint_candidates('skeleton', args.dataset, args.fusion_type, args.cross_attention)
+        )
+        if skeleton_ckpt:
             print(">> Loading best SKELETON weights...")
-            model.load_state_dict(torch.load(f'best_skeleton_{args.dataset}.pth'), strict=False)
-        if os.path.exists(f'best_rgb_{args.dataset}.pth'):
+            model.load_state_dict(torch.load(skeleton_ckpt), strict=False)
+
+        rgb_ckpt = _first_existing_path(
+            _checkpoint_candidates('rgb', args.dataset, args.fusion_type, args.cross_attention)
+        )
+        if rgb_ckpt:
             print(">> Loading best RGB weights...")
-            model.load_state_dict(torch.load(f'best_rgb_{args.dataset}.pth'), strict=False)
+            model.load_state_dict(torch.load(rgb_ckpt), strict=False)
     
     # Optimizer:  Use AdamW with weight decay
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=Config.WEIGHT_DECAY)
@@ -176,6 +210,7 @@ def main():
     
     print(f"\n=== START TRAINING STAGE: {args.stage.upper()} ===")
     print(f"Epochs: {args.epochs}, Initial LR: {args.lr}, Batch size: {args.batch_size}")
+    print(f"Fusion type: {args.fusion_type}, Cross-attention: {args.cross_attention}")
     print(f"Loss function: {'Focal Loss' if Config.USE_FOCAL_LOSS else 'CrossEntropy with Label Smoothing'}")
     print(f"Epoch evaluation: {'validation split (val_ratio=' + str(args.val_ratio) + ')' if use_val else 'held-out test set'}")
     
@@ -213,7 +248,7 @@ def main():
         if eval_acc > best_acc:
             best_acc = eval_acc
             # Lưu tên file theo stage
-            save_name = f"best_{args.stage}_{args.dataset}.pth"
+            save_name = f"best_{args.stage}_{args.dataset}_{_ablation_tag(args.fusion_type, args.cross_attention)}.pth"
             torch.save(model.state_dict(), save_name)
             print(f"Saved {save_name}!")
 
@@ -221,7 +256,7 @@ def main():
     dropout_tag = str(float(args.dropout)).replace('.', 'p')
     plot_history(
         history,
-        f'history_{args.stage}_{args.dataset}_T{args.num_frames}_ei{args.edge_importance}_do{dropout_tag}.png',
+        f'history_{args.stage}_{args.dataset}_{_ablation_tag(args.fusion_type, args.cross_attention)}_T{args.num_frames}_ei{args.edge_importance}_do{dropout_tag}.png',
         eval_label=eval_label,
     )
 
@@ -230,8 +265,10 @@ def main():
     print("="*35)
     
     # Load model đã train tốt nhất
-    best_checkpoint = f"best_{args.stage}_{args.dataset}.pth"
-    if os.path.exists(best_checkpoint):
+    best_checkpoint = _first_existing_path(
+        _checkpoint_candidates(args.stage, args.dataset, args.fusion_type, args.cross_attention)
+    )
+    if best_checkpoint:
         print(f"\nLoading best checkpoint: {best_checkpoint}")
         model.load_state_dict(torch.load(best_checkpoint, map_location=DEVICE))
     

@@ -3,6 +3,26 @@ import torch
 from torch.utils.data import DataLoader
 import os
 
+
+def _ablation_tag(fusion_type: str, cross_attention: str) -> str:
+    return f"{fusion_type}_attn-{cross_attention}"
+
+
+def _checkpoint_candidates(stage: str, dataset: str, fusion_type: str, cross_attention: str) -> list[str]:
+    tag = _ablation_tag(fusion_type, cross_attention)
+    return [
+        f"best_{stage}_{dataset}_{tag}.pth",
+        f"best_{stage}_{dataset}.pth",
+        f"best_model_{dataset}.pth",
+    ]
+
+
+def _first_existing_path(candidates: list[str]) -> str | None:
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return None
+
 def plot_confusion_matrix(cm, classes, filename):
     import matplotlib.pyplot as plt
     import seaborn as sns
@@ -179,9 +199,11 @@ def main():
     parser = argparse.ArgumentParser(description='Test MMFF Model')
     parser.add_argument('--data_dir', type=str, default='./data', help='Dataset directory containing train_data.pkl/test_data.pkl')
     parser.add_argument('--dataset', type=str, default='ntu', choices=['ntu', 'utd', 'nw-ucla', 'sumv2', 'sgu-sb'], 
-                        help='dataset name: ntu, utd, or nw-ucla')
+                        help='dataset name')
     parser.add_argument('--stage', type=str, default='fusion', choices=['skeleton', 'rgb', 'fusion'],
                         help="Which stage checkpoint to evaluate: 'skeleton', 'rgb', or 'fusion'")
+    parser.add_argument('--fusion_type', type=str, default='cmaf', choices=['cmaf', 'sum', 'average', 'concat'])
+    parser.add_argument('--cross_attention', type=str, default='normal', choices=['normal', 'none', 'reversed'])
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
     parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
@@ -198,14 +220,15 @@ def main():
     
     # Cấu hình số lớp
     from config import Config
+    args.dataset = Config.normalize_dataset(args.dataset)
     NUM_CLASSES = Config.get_num_classes(args.dataset)
         
     # Keep compatibility with both naming schemes:
     # - New (train.py): best_{stage}_{dataset}.pth
     # - Old: best_model_{dataset}.pth
-    preferred_model_path = f"best_{args.stage}_{args.dataset}.pth"
-    legacy_model_path = f"best_model_{args.dataset}.pth"
-    MODEL_PATH = preferred_model_path if os.path.exists(preferred_model_path) else legacy_model_path
+    MODEL_PATH = _first_existing_path(
+        _checkpoint_candidates(args.stage, args.dataset, args.fusion_type, args.cross_attention)
+    )
     
     print(f"Evaluating on {args.dataset.upper()} (Classes: {NUM_CLASSES})...")
 
@@ -234,10 +257,12 @@ def main():
         dataset=args.dataset,
         edge_importance_weighting=bool(args.edge_importance),
         stgcn_dropout=float(args.dropout),
+        fusion_type=args.fusion_type,
+        cross_attention_mode=args.cross_attention,
     )
     
     # Load weights
-    if os.path.exists(MODEL_PATH):
+    if MODEL_PATH and os.path.exists(MODEL_PATH):
         state = torch.load(MODEL_PATH, map_location=DEVICE)
         incompatible = model.load_state_dict(state, strict=False)
         if getattr(incompatible, 'missing_keys', None):
@@ -246,7 +271,7 @@ def main():
             print(f"WARNING: Unexpected keys when loading checkpoint: {len(incompatible.unexpected_keys)}")
         print(f"Loaded weights from {MODEL_PATH}")
     else:
-        print(f"ERROR: Weight file {MODEL_PATH} not found. Train first!")
+        print("ERROR: No matching weight file found. Train first!")
         return
 
     model.to(DEVICE)
