@@ -33,15 +33,26 @@ def _first_existing_path(candidates: list[str]) -> str | None:
 def plot_confusion_matrix(cm, classes, filename):
     import matplotlib.pyplot as plt
     import seaborn as sns
-    # Scale figure size a bit with the number of classes (helps readability for UTD/NTU)
+    # Scale figure size and font sizes based on number of classes for maximum readability
     n = len(classes)
-    fig_w = max(10, min(24, 0.6 * n))
-    fig_h = max(8, min(24, 0.55 * n))
-    plt.figure(figsize=(fig_w, fig_h))
+    if n <= 10:
+        fig_w, fig_h = max(10, 1.2 * n), max(8, 1.0 * n)
+        annot_size = 22  # Tăng kích thước số trong ma trận cho rõ nét
+        tick_size = 14
+        label_size = 16
+    elif n <= 30:
+        fig_w, fig_h = 20, 18
+        annot_size = 15  # Tăng kích thước số cho dataset tầm trung (VD: UTD 27 classes)
+        tick_size = 13
+        label_size = 16
+    else:
+        fig_w, fig_h = 36, 34
+        annot_size = 12  # Tăng đáng kể cho dataset nhiều class (VD: NTU 60 classes)
+        tick_size = 11
+        label_size = 16
     
-    # Tăng kích thước chữ dựa trên số class nhưng ở mức vừa phải
-    font_size = 14 if n <= 10 else max(8, 14 - (n * 0.15))
-    sns.set(font_scale=1.2 if n <= 10 else 0.8)
+    plt.figure(figsize=(fig_w, fig_h))
+    sns.set(font_scale=1.2)
     
     sns.heatmap(
         cm,
@@ -50,13 +61,14 @@ def plot_confusion_matrix(cm, classes, filename):
         cmap='Blues',
         xticklabels=classes,
         yticklabels=classes,
-        annot_kws={"size": font_size}
+        annot_kws={"size": annot_size, "weight": "bold"},
+        cbar_kws={"shrink": 0.8}
     )
-    plt.xticks(rotation=45, ha='right', fontsize=font_size * 0.85)
-    plt.yticks(rotation=0, fontsize=font_size * 0.85)
-    plt.ylabel('True Label', fontsize=font_size)
-    plt.xlabel('Predicted Label', fontsize=font_size)
-    plt.title('Confusion Matrix', fontsize=font_size * 1.1)
+    plt.xticks(rotation=45, ha='right', fontsize=tick_size)
+    plt.yticks(rotation=0, fontsize=tick_size)
+    plt.ylabel('True Label', fontsize=label_size, fontweight='bold')
+    plt.xlabel('Predicted Label', fontsize=label_size, fontweight='bold')
+    plt.title('Confusion Matrix', fontsize=label_size + 4, fontweight='bold', pad=15)
     plt.tight_layout()
     plt.savefig(filename, dpi=200)
     plt.close()
