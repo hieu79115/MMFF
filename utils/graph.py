@@ -2,7 +2,7 @@ import numpy as np
 
 class Graph:
     def __init__(self, strategy='spatial', dataset='ntu'): # Thêm tham số dataset
-        self.dataset = dataset
+        self.dataset = (dataset or 'ntu').lower()
         self.get_edge()
         self.hop_size = 1
         self.get_adjacency(strategy)
@@ -55,6 +55,17 @@ class Graph:
                 (1, 17), (17, 18), (18, 19), (19, 20)   # Right leg
             ]
             # Chuyển index từ 1-based sang 0-based
+            self.edge = [(i - 1, j - 1) for (i, j) in neighbor_link] + self_link
+
+        elif self.dataset in ['sumv2', 'sgu-sb']:
+            # 13 joints: COCO-17 upper subset (no legs) — nose, eyes, ears, shoulders, elbows, wrists, hips
+            self.num_node = 13
+            self_link = [(i, i) for i in range(self.num_node)]
+            neighbor_link = [
+                (1, 2), (1, 3), (2, 4), (3, 5),  # head
+                (6, 8), (8, 10), (7, 9), (9, 11),  # arms
+                (6, 7), (6, 12), (7, 13), (12, 13),  # shoulders / hips
+            ]
             self.edge = [(i - 1, j - 1) for (i, j) in neighbor_link] + self_link
         else:
             raise ValueError("Dataset không hỗ trợ")

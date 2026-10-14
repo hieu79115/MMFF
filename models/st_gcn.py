@@ -94,14 +94,24 @@ class SkeletonStream_STGCN(nn.Module):
         self.out_dim = 256
 
     def forward(self, x):
-        # Input x shape: (N, C, T, V, M) - Batch, Channel, Time, Vertex(Joint), Person
-        # Chúng ta xử lý gộp Person (M) vào Batch hoặc lấy trung bình.
-        # Giả sử input dataset đưa vào là (N, C, T, V) (1 người)
+        # Hỗ trợ cả 2 định dạng:
+        #   - 4D: (N, C, T, V)     -> UT-MHAD, NW-UCLA (1 người)
+        #   - 5D: (N, C, T, V, M)  -> NTU60 (nhiều người)
         
-        N, C, T, V = x.size()
-        x = x.permute(0, 3, 1, 2).contiguous().view(N, V * C, T)
+        # Xử lý chiều M (Person) nếu input là 5D
+        if x.dim() == 5:
+            N, C, T, V, M = x.size()
+            # Gộp M vào Batch: (N, C, T, V, M) -> (N*M, C, T, V)
+            x = x.permute(0, 4, 1, 2, 3).contiguous().view(N * M, C, T, V)
+        else:
+            N, C, T, V = x.size()
+            M = 1  # Không có chiều Person
+
+        # Batch Normalization trên skeleton data
+        NM = N * M  # Batch size thực tế sau khi gộp M
+        x = x.permute(0, 3, 1, 2).contiguous().view(NM, V * C, T)
         x = self.data_bn(x)
-        x = x.view(N, V, C, T).permute(0, 2, 3, 1).contiguous().view(N, C, T, V)
+        x = x.view(NM, V, C, T).permute(0, 2, 3, 1).contiguous().view(NM, C, T, V)
 
         # Chạy qua các lớp ST-GCN
         if self.edge_importance_weighting and self.edge_importance is not None:
@@ -111,12 +121,25 @@ class SkeletonStream_STGCN(nn.Module):
             for gcn in self.st_gcn_networks:
                 x = gcn(x, self.A)
 
-        # x lúc này có shape (N, 256, T, V) -> Đây là Feature Map cần cho Attention
-        feature_map = x 
-
-        # Global Pooling (Spatial + Temporal) cho Late Fusion
-        x = F.avg_pool2d(x, x.size()[2:])
-        x = x.view(N, -1) # Vector (N, 256)
+        # x lúc này có shape (N*M, 256, T', V)
+        
+        # Nếu có chiều M, tách lại và lấy trung bình qua Person
+        if M > 1:
+            # Feature map: (N*M, C_out, T', V) -> (N, M, C_out, T', V) -> mean over M -> (N, C_out, T', V)
+            c_out = x.size(1)
+            t_out = x.size(2)
+            v_out = x.size(3)
+            feature_map = x.view(N, M, c_out, t_out, v_out).mean(dim=1)
+            
+            # Global Pooling (Spatial + Temporal)
+            x = F.avg_pool2d(x, x.size()[2:])        # (N*M, 256, 1, 1)
+            x = x.view(N, M, -1).mean(dim=1)         # (N, 256) - trung bình qua Person
+        else:
+            feature_map = x  # (N, 256, T', V)
+            
+            # Global Pooling (Spatial + Temporal)
+            x = F.avg_pool2d(x, x.size()[2:])
+            x = x.view(N, -1)  # (N, 256)
         
         # TRẢ VỀ CẢ 2
         return x, feature_map

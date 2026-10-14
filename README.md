@@ -79,9 +79,38 @@ python train.py --dataset ntu --stage fusion --epochs 30 --batch_size 8
 Key training options:
 - `--dataset`: dataset name (default: `ntu`)
 - `--stage`: `skeleton` | `rgb` | `fusion` (default: `fusion`)
+- `--fusion_type`: `cmaf` | `sum` | `average` | `concat` (default: `cmaf`)
+- `--cross_attention`: `normal` | `none` | `reversed` (default: `normal`)
 - `--epochs`, `--batch_size`, `--lr`
 - `--val_ratio`: validation ratio split from train pool (default: `0.1`)
 - `--split_seed`: seed for deterministic train/val split (default: `42`)
+
+### 2.1 Ablation Runs (NTU60 and HCMUE-SB)
+```bash
+# CMAFNet (proposed): transformer fusion + normal cross-attention
+python train.py --dataset ntu --stage fusion --fusion_type cmaf --cross_attention normal
+python train.py --dataset sumv2 --stage fusion --fusion_type cmaf --cross_attention normal
+
+# No cross-attention
+python train.py --dataset ntu --stage fusion --fusion_type cmaf --cross_attention none
+python train.py --dataset sumv2 --stage fusion --fusion_type cmaf --cross_attention none
+
+# Average fusion + cross-attention
+python train.py --dataset ntu --stage fusion --fusion_type average --cross_attention normal
+python train.py --dataset sumv2 --stage fusion --fusion_type average --cross_attention normal
+
+# Sum fusion + cross-attention
+python train.py --dataset ntu --stage fusion --fusion_type sum --cross_attention normal
+python train.py --dataset sumv2 --stage fusion --fusion_type sum --cross_attention normal
+
+# Concat fusion + cross-attention
+python train.py --dataset ntu --stage fusion --fusion_type concat --cross_attention normal
+python train.py --dataset sumv2 --stage fusion --fusion_type concat --cross_attention normal
+
+# Reversed cross-attention (skeleton query, RGB key/value) + transformer fusion
+python train.py --dataset ntu --stage fusion --fusion_type cmaf --cross_attention reversed
+python train.py --dataset sumv2 --stage fusion --fusion_type cmaf --cross_attention reversed
+```
 
 Outputs:
 - Best weights: `best_{stage}_{dataset}.pth`

@@ -5,6 +5,7 @@ import pickle
 import os
 from PIL import Image
 from torchvision import transforms
+from config import Config
 
 
 def _to_numpy(x):
@@ -70,6 +71,88 @@ def _skeleton_to_c_t_v(skel: np.ndarray, num_joints: int | None = None) -> np.nd
     return skel
 
 
+def _skeleton_to_c_t_v_m(skel: np.ndarray, num_joints: int | None = None, num_persons: int = 2) -> np.ndarray:
+    """Normalize skeleton array to shape (C, T, V, M) with C=3 for multi-person datasets (NTU).
+
+    Accepts common variants:
+    - (C, T, V, M) - already correct
+    - (M, C, T, V) or (M, T, V, C) etc.
+    - 3D input (C, T, V) - no person dim, will add M=1
+    """
+    skel = _to_numpy(skel)
+    if skel is None:
+        raise ValueError("Skeleton is None")
+
+    if skel.ndim == 3:
+        # Không có chiều M -> chuyển đổi (C, T, V) bình thường rồi thêm M=1
+        skel_ctv = _skeleton_to_c_t_v(skel, num_joints)
+        return skel_ctv[:, :, :, np.newaxis]  # (C, T, V, 1)
+
+    if skel.ndim == 4:
+        # Thử xác định format: NTU thường là (C, T, V, M) với C=3
+        dims = skel.shape
+        if dims[0] == 3:  # (C, T, V, M)
+            pass
+        elif dims[-1] == 3:  # (M, T, V, C) hoặc (T, V, M, C) -> heuristic
+            # Giả sử (M, T, V, C): M nhỏ (1-2), T lớn
+            if dims[0] <= num_persons:
+                skel = np.transpose(skel, (3, 1, 2, 0))  # -> (C, T, V, M)
+            else:
+                # Fallback: xử lý từng person riêng
+                skel = np.transpose(skel, (2, 0, 1, 3))  # thử (T, V, C, M) -> nope
+                # Best effort
+                skel = skel
+        elif dims[1] == 3:  # (M, C, T, V)
+            skel = np.transpose(skel, (1, 2, 3, 0))  # -> (C, T, V, M)
+        else:
+            # Không rõ format -> xử lý từng person bằng _skeleton_to_c_t_v
+            # Giả sử chiều cuối hoặc chiều đầu là M
+            if dims[-1] <= num_persons:
+                # Giả sử (..., M), tách M ra
+                m = dims[-1]
+                persons = []
+                for mi in range(m):
+                    person_skel = skel[..., mi]  # bỏ chiều M
+                    persons.append(_skeleton_to_c_t_v(person_skel, num_joints))
+                return np.stack(persons, axis=-1).astype(np.float32)  # (C, T, V, M)
+            elif dims[0] <= num_persons:
+                m = dims[0]
+                persons = []
+                for mi in range(m):
+                    person_skel = skel[mi]  # bỏ chiều M
+                    persons.append(_skeleton_to_c_t_v(person_skel, num_joints))
+                return np.stack(persons, axis=-1).astype(np.float32)  # (C, T, V, M)
+            else:
+                # Fallback: bỏ chiều cuối
+                skel = skel[:, :, :, 0:1]
+
+        skel = skel.astype(np.float32)
+
+        # Pad/truncate joints
+        if num_joints is not None and skel.shape[2] != num_joints:
+            v = skel.shape[2]
+            if v > num_joints:
+                skel = skel[:, :, :num_joints, :]
+            else:
+                pad = [(0, 0), (0, 0), (0, num_joints - v), (0, 0)]
+                skel = np.pad(skel, pad, mode='constant')
+
+        # Pad/truncate persons
+        m = skel.shape[3]
+        if m > num_persons:
+            skel = skel[:, :, :, :num_persons]
+        elif m < num_persons:
+            pad = [(0, 0), (0, 0), (0, 0), (0, num_persons - m)]
+            skel = np.pad(skel, pad, mode='constant')
+
+        return skel
+
+    # ndim >= 5: peel off until 4D
+    while skel.ndim > 4:
+        skel = skel[0]
+    return _skeleton_to_c_t_v_m(skel, num_joints, num_persons)
+
+
 def _temporal_resample_c_t_v(skel_c_t_v: np.ndarray, target_t: int) -> np.ndarray:
     """Resample (C,T,V) to (C,target_t,V) using linear interpolation along time."""
     c, t, v = skel_c_t_v.shape
@@ -87,6 +170,18 @@ def _temporal_resample_c_t_v(skel_c_t_v: np.ndarray, target_t: int) -> np.ndarra
     for ci in range(c):
         for vi in range(v):
             out[ci, :, vi] = np.interp(x_new, x_old, skel_c_t_v[ci, :, vi]).astype(np.float32)
+    return out
+
+
+def _temporal_resample_c_t_v_m(skel_c_t_v_m: np.ndarray, target_t: int) -> np.ndarray:
+    """Resample (C,T,V,M) to (C,target_t,V,M) using linear interpolation along time."""
+    c, t, v, m = skel_c_t_v_m.shape
+    if t == target_t:
+        return skel_c_t_v_m
+    # Resample từng person riêng
+    out = np.empty((c, target_t, v, m), dtype=np.float32)
+    for mi in range(m):
+        out[:, :, :, mi] = _temporal_resample_c_t_v(skel_c_t_v_m[:, :, :, mi], target_t)
     return out
 
 
@@ -108,12 +203,24 @@ def _to_pil_rgb(img):
     arr = np.clip(arr, 0, 255).astype(np.uint8)
     return Image.fromarray(arr).convert('RGB')
 
+class AddGaussianNoise(object):
+    def __init__(self, mean=0., std=1.):
+        self.std = std
+        self.mean = mean
+        
+    def __call__(self, tensor):
+        return tensor + torch.randn(tensor.size()) * self.std + self.mean
+    
+    def __repr__(self):
+        return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
+
 class MMFFDataset(Dataset):
     def __init__(self, root_dir='./data', mode='train', is_dummy=True, 
                  num_samples=100, num_classes=60, dataset='ntu',
                  val_ratio: float = 0.1, split_seed: int = 42,
                  stage: str | None = None,
-                 num_frames: int = 32):
+                 num_frames: int = 32,
+                 noise_std: float = 0.01):
         
         # Supported modes:
         # - 'train': training split (from train_* files)
@@ -123,10 +230,11 @@ class MMFFDataset(Dataset):
         self.is_dummy = is_dummy
         self.num_samples = num_samples
         self.num_classes = num_classes
-        self.dataset_name = dataset
+        self.dataset_name = Config.normalize_dataset(dataset)
         self.root_dir = root_dir
         self.num_frames = int(num_frames)
         self.img_size = 299       
+        self.noise_std = float(noise_std)
 
         self.val_ratio = float(val_ratio)
         self.split_seed = int(split_seed)
@@ -139,17 +247,25 @@ class MMFFDataset(Dataset):
         
         if self.dataset_name == 'utd': self.num_joints = 20
         elif self.dataset_name == 'nw-ucla': self.num_joints = 21
+        elif self.dataset_name in ['sumv2', 'sgu-sb']: self.num_joints = 13
         else: self.num_joints = 25
+
+        # NTU datasets có chiều M (multi-person)
+        self.has_multi_person = (self.dataset_name == 'ntu')
+        self.num_persons = 2 if self.has_multi_person else 1
 
         # Augmentation cho ảnh RGB (Mạnh hơn)
         if self.mode == 'train':
-            self.transform = transforms.Compose([
+            train_transforms = [
                 transforms.Resize((self.img_size, self.img_size)),
                 transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2), # Đổi màu nhẹ
                 transforms.RandomHorizontalFlip(p=0.5), # Lật ảnh
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ])
+            ]
+            if self.noise_std > 0:
+                train_transforms.append(AddGaussianNoise(0., self.noise_std))
+            self.transform = transforms.Compose(train_transforms)
         else:
             self.transform = transforms.Compose([
                 transforms.Resize((self.img_size, self.img_size)),
@@ -211,11 +327,14 @@ class MMFFDataset(Dataset):
                 vr = 0.1
             vr = max(0.0, min(0.5, float(vr)))
 
-            val_count = int(round(vr * n))
-            if n >= 2:
-                val_count = max(1, min(n - 1, val_count))
-            else:
+            if vr == 0.0:
                 val_count = 0
+            else:
+                val_count = int(round(vr * n))
+                if n >= 2:
+                    val_count = max(1, min(n - 1, val_count))
+                else:
+                    val_count = 0
 
             rng = np.random.RandomState(self.split_seed)
             perm = rng.permutation(n)
@@ -273,12 +392,15 @@ class MMFFDataset(Dataset):
             vr = 0.1
         vr = max(0.0, min(0.5, float(vr)))
 
-        val_count = int(round(vr * n))
-        # Ensure both splits are non-empty when possible.
-        if n >= 2:
-            val_count = max(1, min(n - 1, val_count))
-        else:
+        if vr == 0.0:
             val_count = 0
+        else:
+            val_count = int(round(vr * n))
+            # Ensure both splits are non-empty when possible.
+            if n >= 2:
+                val_count = max(1, min(n - 1, val_count))
+            else:
+                val_count = 0
 
         rng = np.random.RandomState(self.split_seed)
         perm = rng.permutation(n)
@@ -322,15 +444,22 @@ class MMFFDataset(Dataset):
                 if skel_raw is None and isinstance(sample.get('augmented_skeletons', None), (list, tuple)) and len(sample['augmented_skeletons']) > 0:
                     skel_raw = sample['augmented_skeletons'][0]
 
-            skel_c_t_v = _skeleton_to_c_t_v(skel_raw, num_joints=self.num_joints)
-            skel_c_t_v = _temporal_resample_c_t_v(skel_c_t_v, self.num_frames)
-
-            # Optional light noise augmentation (kept for parity with legacy pipeline)
-            if self.mode == 'train':
-                noise = np.random.normal(0, 0.01, skel_c_t_v.shape).astype(np.float32)
-                skel_c_t_v = skel_c_t_v + noise
-
-            skel_tensor = torch.from_numpy(skel_c_t_v).float()
+            if self.has_multi_person:
+                # NTU: giữ chiều M -> (C, T, V, M)
+                skel_ctvm = _skeleton_to_c_t_v_m(skel_raw, num_joints=self.num_joints, num_persons=self.num_persons)
+                skel_ctvm = _temporal_resample_c_t_v_m(skel_ctvm, self.num_frames)
+                if self.mode == 'train' and self.noise_std > 0:
+                    noise = np.random.normal(0, self.noise_std, skel_ctvm.shape).astype(np.float32)
+                    skel_ctvm = skel_ctvm + noise
+                skel_tensor = torch.from_numpy(skel_ctvm).float()
+            else:
+                # UTD, NW-UCLA: chỉ 1 người -> (C, T, V)
+                skel_c_t_v = _skeleton_to_c_t_v(skel_raw, num_joints=self.num_joints)
+                skel_c_t_v = _temporal_resample_c_t_v(skel_c_t_v, self.num_frames)
+                if self.mode == 'train' and self.noise_std > 0:
+                    noise = np.random.normal(0, self.noise_std, skel_c_t_v.shape).astype(np.float32)
+                    skel_c_t_v = skel_c_t_v + noise
+                skel_tensor = torch.from_numpy(skel_c_t_v).float()
 
             # 2) RGB crop directly from pkl if present
             img = sample.get('rgb_crop', None)
@@ -344,14 +473,20 @@ class MMFFDataset(Dataset):
 
         # ---- Legacy path ----
         # 1. Skeleton
-        skel = self.skeleton_data[real_idx, :, :, :, 0]
-
-        # --- DATA AUGMENTATION CHO SKELETON (Chỉ áp dụng khi Train) ---
-        if self.mode == 'train':
-            noise = np.random.normal(0, 0.01, skel.shape)
-            skel = skel + noise
-
-        skel_tensor = torch.from_numpy(skel).float()
+        if self.has_multi_person:
+            # NTU: giữ tất cả M persons -> skeleton_data shape: (N, C, T, V, M)
+            skel = self.skeleton_data[real_idx]  # (C, T, V, M)
+            if self.mode == 'train' and self.noise_std > 0:
+                noise = np.random.normal(0, self.noise_std, skel.shape)
+                skel = skel + noise
+            skel_tensor = torch.from_numpy(np.array(skel)).float()
+        else:
+            # UTD, NW-UCLA: chỉ lấy person đầu tiên -> (C, T, V)
+            skel = self.skeleton_data[real_idx, :, :, :, 0]
+            if self.mode == 'train' and self.noise_std > 0:
+                noise = np.random.normal(0, self.noise_std, skel.shape)
+                skel = skel + noise
+            skel_tensor = torch.from_numpy(np.array(skel)).float()
 
         # 2. RGB Image
         video_name = self.sample_name[real_idx]
@@ -371,8 +506,12 @@ class MMFFDataset(Dataset):
         return skel_tensor, rgb_tensor, 0, label
 
     def _get_dummy_item(self):
-        # ... (giữ nguyên dummy)
-        skel = torch.randn(3, self.num_frames, self.num_joints)
+        if self.has_multi_person:
+            # NTU: (C, T, V, M)
+            skel = torch.randn(3, self.num_frames, self.num_joints, self.num_persons)
+        else:
+            # UTD, NW-UCLA: (C, T, V)
+            skel = torch.randn(3, self.num_frames, self.num_joints)
         rgb = torch.randn(3, self.img_size, self.img_size)
         label = int(np.random.randint(0, max(1, self.num_classes)))
         return skel, rgb, 0, label
