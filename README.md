@@ -106,6 +106,25 @@ python run_multiseed.py --seeds 0 1 2 3 4 --split_seed 42 \
 The runner writes `multiseed_summary.json` and prints the summary. Evaluate a
 seed-specific checkpoint with `test.py --seed 0`.
 
+### 4. Inference and GPU Memory Benchmark
+
+Measure model-only latency, transfer-plus-inference latency, throughput, and
+peak GPU memory. CUDA timings use synchronization and exclude data loading time.
+Use `--is_dummy` for a setup check without real data:
+
+```bash
+python benchmark_inference.py --dataset ntu --stage fusion --seed 0 \
+  --batch_size 1 --max_samples 100 --warmup_batches 10 \
+  --output benchmark_fusion_ntu_seed0.json
+```
+
+Important fields in the JSON output include:
+- `forward_latency_ms_per_sample`
+- `forward_latency_ms_per_frame`
+- `throughput_samples_per_second`
+- `peak_gpu_memory_allocated_mb`
+- `peak_gpu_memory_reserved_mb`
+
 ### 2.1 Ablation Runs (NTU60 and HCMUE-SB)
 ```bash
 # CMAFNet (proposed): transformer fusion + normal cross-attention
