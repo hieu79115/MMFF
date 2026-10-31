@@ -5,8 +5,11 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
 from tqdm import tqdm
 import argparse
+import json
 import os
+import random
 import matplotlib.pyplot as plt
+import numpy as np
 
 from utils.dataset import MMFFDataset
 from models.mmff_net import MMFF_Net_Advanced
@@ -19,19 +22,28 @@ def _ablation_tag(fusion_type: str, cross_attention: str) -> str:
     return f"{fusion_type}_attn-{cross_attention}"
 
 
-def _checkpoint_candidates(stage: str, dataset: str, fusion_type: str, cross_attention: str) -> list[str]:
+def _checkpoint_candidates(
+    stage: str,
+    dataset: str,
+    fusion_type: str,
+    cross_attention: str,
+    seed: int | None = None,
+) -> list[str]:
     # Stage-specific naming:
     # - skeleton/rgb do not depend on fusion_type
     # - fusion keeps fusion_type + cross_attention tag
     candidates = []
+    seed_tag = f"_seed{seed}" if seed is not None else ""
     if stage == 'fusion':
-        candidates.append(f"best_{stage}_{dataset}_{_ablation_tag(fusion_type, cross_attention)}.pth")
+        candidates.append(f"best_{stage}_{dataset}_{_ablation_tag(fusion_type, cross_attention)}{seed_tag}.pth")
     else:
-        candidates.append(f"best_{stage}_{dataset}_attn-{cross_attention}.pth")
+        candidates.append(f"best_{stage}_{dataset}_attn-{cross_attention}{seed_tag}.pth")
         # Backward compatibility with old naming that included fusion_type.
-        candidates.append(f"best_{stage}_{dataset}_{_ablation_tag(fusion_type, cross_attention)}.pth")
+        candidates.append(
+            f"best_{stage}_{dataset}_{_ablation_tag(fusion_type, cross_attention)}{seed_tag}.pth"
+        )
 
-    candidates.append(f"best_{stage}_{dataset}.pth")
+    candidates.append(f"best_{stage}_{dataset}{seed_tag}.pth")
     return candidates
 
 
@@ -40,6 +52,23 @@ def _first_existing_path(candidates: list[str]) -> str | None:
         if os.path.exists(path):
             return path
     return None
+
+
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
+
+def seed_worker(worker_id: int) -> None:
+    worker_seed = torch.initial_seed() % (2**32)
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
 def plot_history(history, save_path, eval_label='Eval'):
     plt.figure(figsize=(12, 5))
@@ -101,9 +130,11 @@ def main():
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
     parser.add_argument('--val_ratio', type=float, default=0.0, help='Validation ratio split from training set (set to 0 to use all train data)')
     parser.add_argument('--split_seed', type=int, default=42, help='Random seed for train/val split')
+    parser.add_argument('--seed', type=int, default=0, help='Training seed for Python, NumPy, PyTorch, and DataLoader')
     parser.add_argument('--gaussian_noise', type=float, default=0.01, help='Standard deviation of Gaussian noise added during training (RGB & Skeleton)')
     args = parser.parse_args()
     args.dataset = Config.normalize_dataset(args.dataset)
+    set_seed(args.seed)
     
     # Set defaults from config if not specified
     if args.epochs is None:
@@ -142,7 +173,15 @@ def main():
         num_frames=args.num_frames,
         noise_std=args.gaussian_noise,
     )
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
+    loader_generator = torch.Generator()
+    loader_generator.manual_seed(args.seed)
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=args.batch_size,
+        shuffle=True,
+        generator=loader_generator,
+        worker_init_fn=seed_worker,
+    )
     eval_loader = DataLoader(eval_ds, batch_size=args.batch_size, shuffle=False)
     eval_label = 'Val' if use_val else 'Test'
     
@@ -161,7 +200,7 @@ def main():
         # Load pre-trained Skeleton only when cross-attention is used.
         if args.cross_attention != 'none':
             skeleton_ckpt = _first_existing_path(
-                _checkpoint_candidates('skeleton', args.dataset, args.fusion_type, args.cross_attention)
+                _checkpoint_candidates('skeleton', args.dataset, args.fusion_type, args.cross_attention, args.seed)
             )
             if skeleton_ckpt:
                 print(">> Loading best SKELETON weights for RGB training...")
@@ -176,14 +215,14 @@ def main():
     elif args.stage == 'fusion': 
         # Load cả 2 thằng trước khi train tổng
         skeleton_ckpt = _first_existing_path(
-            _checkpoint_candidates('skeleton', args.dataset, args.fusion_type, args.cross_attention)
+            _checkpoint_candidates('skeleton', args.dataset, args.fusion_type, args.cross_attention, args.seed)
         )
         if skeleton_ckpt:
             print(">> Loading best SKELETON weights...")
             model.load_state_dict(torch.load(skeleton_ckpt), strict=False)
 
         rgb_ckpt = _first_existing_path(
-            _checkpoint_candidates('rgb', args.dataset, args.fusion_type, args.cross_attention)
+            _checkpoint_candidates('rgb', args.dataset, args.fusion_type, args.cross_attention, args.seed)
         )
         if rgb_ckpt:
             print(">> Loading best RGB weights...")
@@ -260,9 +299,12 @@ def main():
             best_acc = eval_acc
             # Lưu tên file theo stage
             if args.stage == 'fusion':
-                save_name = f"best_{args.stage}_{args.dataset}_{_ablation_tag(args.fusion_type, args.cross_attention)}.pth"
+                save_name = (
+                    f"best_{args.stage}_{args.dataset}_"
+                    f"{_ablation_tag(args.fusion_type, args.cross_attention)}_seed{args.seed}.pth"
+                )
             else:
-                save_name = f"best_{args.stage}_{args.dataset}_attn-{args.cross_attention}.pth"
+                save_name = f"best_{args.stage}_{args.dataset}_attn-{args.cross_attention}_seed{args.seed}.pth"
             torch.save(model.state_dict(), save_name)
             print(f"Saved {save_name}!")
 
@@ -270,9 +312,29 @@ def main():
     dropout_tag = str(float(args.dropout)).replace('.', 'p')
     plot_history(
         history,
-        f'history_{args.stage}_{args.dataset}_{_ablation_tag(args.fusion_type, args.cross_attention)}_T{args.num_frames}_ei{args.edge_importance}_do{dropout_tag}.png',
+        f'history_{args.stage}_{args.dataset}_{_ablation_tag(args.fusion_type, args.cross_attention)}'
+        f'_seed{args.seed}_T{args.num_frames}_ei{args.edge_importance}_do{dropout_tag}.png',
         eval_label=eval_label,
     )
+    metrics_path = (
+        f'metrics_{args.stage}_{args.dataset}_{_ablation_tag(args.fusion_type, args.cross_attention)}'
+        f'_seed{args.seed}.json'
+    )
+    with open(metrics_path, 'w', encoding='utf-8') as metrics_file:
+        json.dump(
+            {
+                'dataset': args.dataset,
+                'stage': args.stage,
+                'fusion_type': args.fusion_type,
+                'cross_attention': args.cross_attention,
+                'seed': args.seed,
+                'split_seed': args.split_seed,
+                'best_accuracy': best_acc,
+                'best_accuracy_percent': best_acc,
+            },
+            metrics_file,
+            indent=2,
+        )
 
     print("\n" + "="*35)
     print("TRAINING COMPLETED!  Printing Model Statistics...")
@@ -280,7 +342,7 @@ def main():
     
     # Load model đã train tốt nhất
     best_checkpoint = _first_existing_path(
-        _checkpoint_candidates(args.stage, args.dataset, args.fusion_type, args.cross_attention)
+        _checkpoint_candidates(args.stage, args.dataset, args.fusion_type, args.cross_attention, args.seed)
     )
     if best_checkpoint:
         print(f"\nLoading best checkpoint: {best_checkpoint}")

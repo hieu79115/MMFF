@@ -84,6 +84,27 @@ Key training options:
 - `--epochs`, `--batch_size`, `--lr`
 - `--val_ratio`: validation ratio split from train pool (default: `0.1`)
 - `--split_seed`: seed for deterministic train/val split (default: `42`)
+- `--seed`: independent training seed for Python, NumPy, PyTorch, CUDA, and DataLoader (default: `0`)
+
+For reproducible multi-seed experiments, keep `--split_seed` fixed and vary only `--seed`.
+Checkpoints, histories, and metrics include the training seed, so runs do not overwrite each
+other. For example:
+
+```bash
+python train.py --dataset ntu --stage fusion --seed 0 --split_seed 42
+python train.py --dataset ntu --stage fusion --seed 1 --split_seed 42
+python train.py --dataset ntu --stage fusion --seed 2 --split_seed 42
+```
+
+To run several independent seeds and summarize the best evaluation accuracy as `mean ± std`:
+
+```bash
+python run_multiseed.py --seeds 0 1 2 3 4 --split_seed 42 \
+  --dataset ntu --stage fusion --epochs 70
+```
+
+The runner writes `multiseed_summary.json` and prints the summary. Evaluate a
+seed-specific checkpoint with `test.py --seed 0`.
 
 ### 2.1 Ablation Runs (NTU60 and HCMUE-SB)
 ```bash
