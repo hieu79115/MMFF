@@ -8,19 +8,19 @@ def _ablation_tag(fusion_type: str, cross_attention: str) -> str:
     return f"{fusion_type}_attn-{cross_attention}"
 
 
-def _checkpoint_candidates(stage: str, dataset: str, fusion_type: str, cross_attention: str) -> list[str]:
+def _checkpoint_candidates(stage: str, dataset: str, fusion_type: str, cross_attention: str, seed: int | None = None) -> list[str]:
     candidates = []
+    seed_tag = f"_seed{seed}" if seed is not None else ""
     if stage == 'fusion':
-        candidates.append(f"best_{stage}_{dataset}_{_ablation_tag(fusion_type, cross_attention)}.pth")
+        candidates.append(f"best_{stage}_{dataset}_{_ablation_tag(fusion_type, cross_attention)}{seed_tag}.pth")
     else:
-        candidates.append(f"best_{stage}_{dataset}_attn-{cross_attention}.pth")
+        candidates.append(f"best_{stage}_{dataset}_attn-{cross_attention}{seed_tag}.pth")
         # Backward compatibility with old naming that included fusion_type.
-        candidates.append(f"best_{stage}_{dataset}_{_ablation_tag(fusion_type, cross_attention)}.pth")
+        candidates.append(f"best_{stage}_{dataset}_{_ablation_tag(fusion_type, cross_attention)}{seed_tag}.pth")
 
-    candidates.extend([
-        f"best_{stage}_{dataset}.pth",
-        f"best_model_{dataset}.pth",
-    ])
+    candidates.append(f"best_{stage}_{dataset}{seed_tag}.pth")
+    if seed is None:
+        candidates.append(f"best_model_{dataset}.pth")
     return candidates
 
 
@@ -227,6 +227,7 @@ def main():
     parser.add_argument('--num_frames', type=int, default=32, help='Number of skeleton frames after resampling')
     parser.add_argument('--edge_importance', type=int, default=0, choices=[0, 1], help='Enable Edge Importance Weighting in ST-GCN (0/1)')
     parser.add_argument('--dropout', type=float, default=0.0, help='Dropout for ST-GCN blocks (kept for run metadata)')
+    parser.add_argument('--seed', type=int, default=None, help='Seed used to select a seed-specific checkpoint')
     parser.add_argument('--is_dummy', action='store_true', help='Use dummy data for testing')
     
     args = parser.parse_args()
@@ -246,7 +247,7 @@ def main():
     # - New (train.py): best_{stage}_{dataset}.pth
     # - Old: best_model_{dataset}.pth
     MODEL_PATH = _first_existing_path(
-        _checkpoint_candidates(args.stage, args.dataset, args.fusion_type, args.cross_attention)
+        _checkpoint_candidates(args.stage, args.dataset, args.fusion_type, args.cross_attention, args.seed)
     )
     
     print(f"Evaluating on {args.dataset.upper()} (Classes: {NUM_CLASSES})...")

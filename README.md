@@ -84,6 +84,46 @@ Key training options:
 - `--epochs`, `--batch_size`, `--lr`
 - `--val_ratio`: validation ratio split from train pool (default: `0.1`)
 - `--split_seed`: seed for deterministic train/val split (default: `42`)
+- `--seed`: independent training seed for Python, NumPy, PyTorch, CUDA, and DataLoader (default: `0`)
+
+For reproducible multi-seed experiments, keep `--split_seed` fixed and vary only `--seed`.
+Checkpoints, histories, and metrics include the training seed, so runs do not overwrite each
+other. For example:
+
+```bash
+python train.py --dataset ntu --stage fusion --seed 0 --split_seed 42
+python train.py --dataset ntu --stage fusion --seed 1 --split_seed 42
+python train.py --dataset ntu --stage fusion --seed 2 --split_seed 42
+```
+
+To run several independent seeds and summarize the best evaluation accuracy as `mean ± std`:
+
+```bash
+python run_multiseed.py --seeds 0 1 2 3 4 --split_seed 42 \
+  --dataset ntu --stage fusion --epochs 70
+```
+
+The runner writes `multiseed_summary.json` and prints the summary. Evaluate a
+seed-specific checkpoint with `test.py --seed 0`.
+
+### 4. Inference and GPU Memory Benchmark
+
+Measure model-only latency, transfer-plus-inference latency, throughput, and
+peak GPU memory. CUDA timings use synchronization and exclude data loading time.
+Use `--is_dummy` for a setup check without real data:
+
+```bash
+python benchmark_inference.py --dataset ntu --stage fusion --seed 0 \
+  --batch_size 1 --max_samples 100 --warmup_batches 10 \
+  --output benchmark_fusion_ntu_seed0.json
+```
+
+Important fields in the JSON output include:
+- `forward_latency_ms_per_sample`
+- `forward_latency_ms_per_frame`
+- `throughput_samples_per_second`
+- `peak_gpu_memory_allocated_mb`
+- `peak_gpu_memory_reserved_mb`
 
 ### 2.1 Ablation Runs (NTU60 and HCMUE-SB)
 ```bash
