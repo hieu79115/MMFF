@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 import numpy as np
 import pickle
 import os
+from pathlib import Path
 from PIL import Image
 from torchvision import transforms
 from config import Config
@@ -287,8 +288,10 @@ class MMFFDataset(Dataset):
         #   - normalized_skeleton
         #   - augmented_skeletons
         #   - rgb_crop
-        new_train_pkl = os.path.join(self.root_dir, 'train_data.pkl')
-        new_test_pkl = os.path.join(self.root_dir, 'test_data.pkl')
+        data_root = self._resolve_data_root()
+        new_train_pkl = os.path.join(data_root, 'train_data.pkl')
+        new_test_pkl = os.path.join(data_root, 'test_data.pkl')
+        self.root_dir = data_root
 
         self.samples = None
 
@@ -341,6 +344,7 @@ class MMFFDataset(Dataset):
             val_idx = perm[:val_count]
             train_idx = perm[val_count:]
             self._subset_indices = train_idx if self.mode == 'train' else val_idx
+
             return
 
         # ---- Legacy convention fallback (npy + label pkl) ----
@@ -408,6 +412,37 @@ class MMFFDataset(Dataset):
         train_idx = perm[val_count:]
 
         self._subset_indices = train_idx if self.mode == 'train' else val_idx
+
+    def _resolve_data_root(self) -> str:
+        """Find the directory containing the exported dataset files.
+
+        Kaggle datasets are often extracted into one extra directory below the
+        path supplied through ``--data_dir``. Prefer the supplied directory,
+        then search its descendants for the new train/test pickle pair.
+        """
+        root = Path(self.root_dir).expanduser()
+        if not root.exists():
+            raise FileNotFoundError(f"Dataset directory does not exist: {root}")
+        if not root.is_dir():
+            raise NotADirectoryError(f"Dataset path is not a directory: {root}")
+
+        if (root / "train_data.pkl").exists() or (root / "test_data.pkl").exists():
+            return str(root)
+
+        candidates = sorted(
+            {
+                path.parent
+                for filename in ("train_data.pkl", "test_data.pkl")
+                for path in root.rglob(filename)
+            },
+            key=lambda path: (len(path.parts), str(path)),
+        )
+        if candidates:
+            resolved = candidates[0]
+            print(f"Using dataset files from: {resolved}")
+            return str(resolved)
+
+        return str(root)
 
     def __len__(self):
         if self.is_dummy:
