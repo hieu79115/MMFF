@@ -1,276 +1,236 @@
-**Overview**
-- MMFF (Multi-Modal Fusion Framework) is an action recognition model that fuses Skeleton (ST-GCN) and RGB (Xception) streams, then applies a Transformer-based late fusion to learn interactions between modalities.
-- Repo supports both real data (exported `.npy/.pkl`) and dummy data (quick pipeline checks).
-- **Supported Datasets:**
-  - **NTU RGB+D**: 60 action classes, 25 skeleton joints
-  - **UTD-MHAD**: 27 action classes, 20 skeleton joints
-  - **NW-UCLA**: 10 action classes, 21 skeleton joints (Northwestern-UCLA Multiview Action 3D)
+# PCINet: Pose-Guided Context Refinement and Global Pose-Context Interaction for Action Recognition
 
-**Architecture**
-- Skeleton stream: ST-GCN extracts spatio-temporal features and returns
-	- a 256-d vector, and
-	- a feature map used to guide the RGB stream via Cross-Modal Attention.
-- RGB stream: `Xception` backbone (from `timm`, pretrained on ImageNet) + Cross-Modal Attention; global average pooled to a 2048-d vector.
-- Late fusion: `TransformerEncoder` with a `[CLS]` token mixes the two vectors and performs classification.
-- Key sources: [models/mmff_net.py](models/mmff_net.py), [models/st_gcn.py](models/st_gcn.py), [models/backbone.py](models/backbone.py), [models/attention.py](models/attention.py), [models/fusion.py](models/fusion.py).
+> **Note on Repository Naming:** *`MMFF` (Multimodal Feature Fusion Framework) is the official reference implementation codebase for **PCINet** ("PCINet: Pose-Guided Context Refinement and Global Pose-Context Interaction for Action Recognition").*
 
-**Requirements**
-- Python 3.10+ (3.10 or 3.11 recommended).
-- PyTorch and TorchVision (versions pinned in [requirements.txt](requirements.txt)).
-- `timm` to load `legacy_xception` (pretrained=True will fetch ImageNet weights on first run).
-- Windows supported (commands below use PowerShell/CMD). Linux/Mac are similar.
+## 📌 Method Overview
 
-**Setup**
-1) Create a virtual environment and install dependencies:
+**PCINet** is a multimodal action recognition framework designed to address the challenge of distinguishing actions with similar human body configurations by effectively coordinating pose-guided spatial visual refinement with subsequent global multimodal interaction.
+
+The framework consists of two core modules:
+
+1. **Context Feature Enhancement Block (CFEB)**: Uses temporally aggregated joint-level pose representations from an ST-GCN backbone to guide the spatial refinement of Xception-extracted RGB feature maps via cross-modal attention before global pooling.
+
+2. **Context-Pose Interaction Block (CPIB)**: Projects enhanced contextual and pose representations into compact modality tokens and models their global inter-modality dependencies using a multi-head Transformer encoder.
+
+## 📊 Benchmark Summary
+
+PCINet achieves state-of-the-art performance across key benchmark datasets:
+
+| Dataset | Modality | Setting / Protocol | Accuracy (%) | F1-Score (%) | 
+| ----- | ----- | ----- | ----- | ----- | 
+| **UTD-MHAD** | Skeleton + RGB | Subject Split (Odd/Even) | **96.28%** | — | 
+| **NW-UCLA** | Skeleton + RGB | Cross-View (V1,V2 / V3) | **93.49%** | — | 
+| **HCMUE-SB** | Skeleton + RGB | Classroom Behavior Split | **94.58%** | **94.00%** | 
+
+*Note: All baseline comparison values reported in the paper are directly quoted from their original published sources under standard protocols.*
+
+## 🏗️ Model Architecture
+
 ```
+               +-------------------------------------------------------+
+               |                    SKELETON STREAM                    |
+Skeleton ----> |  ST-GCN (10 Blocks, C=64->256, Dropout=0.3)           | --+
+Sequences      |  Outputs: Global Pose Vector & Feature Map F_P        |   |
+               +-------------------------------------------------------+   |
+                                           |                               |
+                                   Temporal Pooling                        |
+                                           v                               v
+               +-------------------------------------------------------+ +--------------------+
+RGB Middle --> |                      RGB STREAM                       | |      CPIB          |
+Frame Crop     |  Xception Backbone -> Spatial Context Map F_C         | | (Transformer       | --> Action
+(299x299)      |                           |                           | |  Encoder, 3 L,   |     Logits
+               |                           v                           | |  8 Heads, D=512)  |
+               |  Context Feature Enhancement Block (CFEB)              | +--------------------+
+               |  (Pose-guided Spatial Cross-Attention -> F_Ce)        |           ^
+               +-------------------------------------------------------+           |
+                                           |                                       |
+                                           +---------------------------------------+
+
+```
+
+## 🛠️ Environment Setup & Installation
+
+### Dependencies
+
+* Python 3.9+ (3.10 / 3.11 recommended)
+
+* PyTorch >= 1.12.0
+
+* torchvision >= 0.13.0
+
+* `timm` >= 0.6.12 (for pre-trained Xception backbone)
+
+* `scikit-learn`, `matplotlib`, `seaborn`, `tqdm`, `thop`, `pytorch-grad-cam`
+
+### Installation Commands
+
+```
+# 1. Clone repository
+git clone https://github.com/hieu79115/MMFF.git
+cd MMFF
+
+# 2. Create and activate a virtual environment
 python -m venv .venv
+# On Windows:
 .venv\Scripts\activate
+# On Linux/macOS:
+source .venv/bin/activate
+
+# 3. Install required packages
 pip install --upgrade pip
 pip install -r requirements.txt
-```
-2) Optional: verify PyTorch CUDA availability:
-```
-python -c "import torch; print('CUDA:', torch.cuda.is_available())"
+
 ```
 
-**Data Structure**
+## ⚙️ Hyperparameters & 3-Stage Training Recipe
 
-The dataset loader [utils/dataset.py](utils/dataset.py) expects exported files under `./data`:
-- `train_data.npy` + `train_label.pkl`: training pool
-- `test_data.npy` + `test_label.pkl`: held-out test set
-- `images/`: RGB frames (one image per sample name from the `.pkl`)
+All experiments follow a strict **three-stage sequential training schedule**:
 
-During training, validation is a deterministic split from the training pool:
-- `mode='train'` and `mode='val'` both read from `train_*` and split using `--val_ratio` + `--split_seed`.
-- `mode='test'` reads from `test_*` (and falls back to legacy `val_*` if present).
+| Hyperparameter / Setting | Stage 1: Skeleton Stream | Stage 2: RGB + CFEB | Stage 3: CPIB Fusion | 
+| ----- | ----- | ----- | ----- | 
+| **Active Target** | Skeleton Branch (`skel_encoder`) | RGB Branch (`rgb_encoder` + CFEB) | Joint Model (`fusion_head`) | 
+| **Frozen Modules** | None | Skeleton Branch (`torch.no_grad()`) | None (Unfrozen) | 
+| **Backbone Strategy** | — | Xception frozen initially for 10 epochs | Fully unfrozen | 
+| **Epochs** | 100 | 100 | 100 | 
+| **Batch Size** | 8 | 8 | 32 | 
+| **Initial Learning Rate (**$LR_0$**)** | $1 \times 10^{-3}$ | $5 \times 10^{-4}$ | $1 \times 10^{-4}$ | 
+| **Optimizer** | AdamW | AdamW | AdamW | 
+| **Weight Decay** | $1 \times 10^{-4}$ | $1 \times 10^{-4}$ | $1 \times 10^{-4}$ | 
+| **LR Scheduler** | Cosine Annealing ($\eta_{min}=10^{-6}$) | Cosine Annealing ($\eta_{min}=10^{-6}$) | Cosine Annealing ($\eta_{min}=10^{-6}$) | 
+| **Warmup** | 5 epochs (Linear) | 5 epochs (Linear) | 5 epochs (Linear) | 
+| **Dropout** | 0.3 | 0.3 | 0.3 | 
+| **Loss Function** | Cross-Entropy ($\epsilon=0.1$) | Cross-Entropy ($\epsilon=0.1$) | Cross-Entropy ($\epsilon=0.1$) / Focal Loss\* | 
 
-Important defaults in [utils/dataset.py](utils/dataset.py):
-- Fixed frames: 32 (`num_frames=32`).
-- RGB image size: 299×299 (Xception-friendly).
-- Joints: NTU=25, UTD=20, NW-UCLA=21.
+*\*Focal Loss (*$\alpha=0.25, \gamma=2.0$*) is additionally applied on HCMUE-SB to address class imbalance.*
 
-## How to Run
+## 📁 Dataset Directory Layout
 
-### 1. Quick Sanity Check (End-to-End Pipeline)
-Run the complete pipeline with dummy data to verify setup:
+Data loading via `utils/dataset.py` expects preprocessed samples inside `--data_dir` (default: `./data`):
+
+```
+data/
+├── train_data.pkl    # List of training dicts: video_name, label, normalized_skeleton, rgb_crop, etc.
+├── test_data.pkl     # List of testing dicts
+└── images/           # Raw/cropped RGB images (fallback)
+
+```
+
+**Skeleton Frame Configurations:**
+
+* **UTD-MHAD**: 20 joints, resampled to $T = 32$ frames.
+
+* **NW-UCLA**: 21 joints, resampled to $T = 32$ frames.
+
+* **HCMUE-SB**: 13 joints (upper body), resampled to $T = 15$ frames.
+
+## 🚀 Usage & Reproduction Commands
+
+### 1. Verification with Dummy Data
+
+Run an end-to-end pipeline check without real dataset files:
+
 ```
 python test_pipeline.py
-```
-**Expected output:** prints skeleton shape, RGB shape, and model output shape.
 
-### 2. Training
-Training is stage-wise (each stage saves its own best checkpoint):
-- `skeleton`: train skeleton stream
-- `rgb`: train RGB stream (optionally warm-start from skeleton)
-- `fusion`: train final fusion head (warm-start from skeleton + rgb if available)
-
-Examples:
-```
-# 1) Skeleton stage
-python train.py --dataset ntu --stage skeleton --epochs 30 --batch_size 8
-
-# 2) RGB stage
-python train.py --dataset ntu --stage rgb --epochs 30 --batch_size 8
-
-# 3) Fusion stage
-python train.py --dataset ntu --stage fusion --epochs 30 --batch_size 8
 ```
 
-Key training options:
-- `--dataset`: dataset name (default: `ntu`)
-- `--stage`: `skeleton` | `rgb` | `fusion` (default: `fusion`)
-- `--fusion_type`: `cmaf` | `sum` | `average` | `concat` (default: `cmaf`)
-- `--cross_attention`: `normal` | `none` | `reversed` (default: `normal`)
-- `--epochs`, `--batch_size`, `--lr`
-- `--val_ratio`: validation ratio split from train pool (default: `0.1`)
-- `--split_seed`: seed for deterministic train/val split (default: `42`)
+### 2. Full 3-Stage Training
 
-### 2.1 Ablation Runs (NTU60 and HCMUE-SB)
-```bash
-# CMAFNet (proposed): transformer fusion + normal cross-attention
-python train.py --dataset ntu --stage fusion --fusion_type cmaf --cross_attention normal
-python train.py --dataset sumv2 --stage fusion --fusion_type cmaf --cross_attention normal
+#### UTD-MHAD Example:
 
-# No cross-attention
-python train.py --dataset ntu --stage fusion --fusion_type cmaf --cross_attention none
-python train.py --dataset sumv2 --stage fusion --fusion_type cmaf --cross_attention none
+```
+# Stage 1: Train Skeleton Stream
+python train.py --dataset utd --stage skeleton --batch_size 8 --lr 0.001 --epochs 100 --num_frames 32 --seed 42
 
-# Average fusion + cross-attention
-python train.py --dataset ntu --stage fusion --fusion_type average --cross_attention normal
-python train.py --dataset sumv2 --stage fusion --fusion_type average --cross_attention normal
+# Stage 2: Fine-tune RGB Stream + CFEB (loads best skeleton weights)
+python train.py --dataset utd --stage rgb --cross_attention normal --batch_size 8 --lr 0.0005 --epochs 100 --num_frames 32 --seed 42
 
-# Sum fusion + cross-attention
-python train.py --dataset ntu --stage fusion --fusion_type sum --cross_attention normal
-python train.py --dataset sumv2 --stage fusion --fusion_type sum --cross_attention normal
+# Stage 3: Train CPIB Fusion (loads skeleton & RGB weights)
+python train.py --dataset utd --stage fusion --fusion_type cmaf --cross_attention normal --batch_size 32 --lr 0.0001 --epochs 100 --num_frames 32 --seed 42
 
-# Concat fusion + cross-attention
-python train.py --dataset ntu --stage fusion --fusion_type concat --cross_attention normal
-python train.py --dataset sumv2 --stage fusion --fusion_type concat --cross_attention normal
-
-# Reversed cross-attention (skeleton query, RGB key/value) + transformer fusion
-python train.py --dataset ntu --stage fusion --fusion_type cmaf --cross_attention reversed
-python train.py --dataset sumv2 --stage fusion --fusion_type cmaf --cross_attention reversed
 ```
 
-Outputs:
-- Best weights: `best_{stage}_{dataset}.pth`
-- Training history plot: `history_{stage}_{dataset}.png`
+#### NW-UCLA Example:
 
-### 3. Evaluation
-
-Evaluate a trained checkpoint:
 ```
-python test.py --dataset ntu --stage fusion --batch_size 4
-python test.py --dataset utd --stage fusion --batch_size 4
-python test.py --dataset nw-ucla --stage fusion --batch_size 4
+python train.py --dataset nw-ucla --stage skeleton --batch_size 8 --lr 0.001 --epochs 100 --num_frames 32 --seed 42
+python train.py --dataset nw-ucla --stage rgb --cross_attention normal --batch_size 8 --lr 0.0005 --epochs 100 --num_frames 32 --seed 42
+python train.py --dataset nw-ucla --stage fusion --fusion_type cmaf --cross_attention normal --batch_size 32 --lr 0.0001 --epochs 100 --num_frames 32 --seed 42
+
 ```
 
-#### Key Evaluation Options:
-- `--dataset`: `ntu`, `utd`, or `nw-ucla` (default: `ntu`)
-- `--stage`: which checkpoint to evaluate (`skeleton` | `rgb` | `fusion`)
-- `--batch_size`: batch size (default: 4)
-- `--is_dummy`: use dummy data (accuracy will be random)
+### 3. Multi-Seed Experiments
 
-**Note:** With `is_dummy=True`, accuracy will be random (for pipeline testing only). When real data is integrated, the script will also generate `confusion_matrix_{dataset}.png`.
+Run independent seeds (0 to 4) to compute mean and standard deviation:
 
-### 4. Full Training Workflow Example
-```bash
-# 1. Quick sanity check
-python test_pipeline.py
+```
+python run_multiseed.py --seeds 0 1 2 3 4 --split_seed 42 \
+  --dataset utd --stage fusion --fusion_type cmaf --cross_attention normal
 
-# 2. Train the model
-python train.py --dataset ntu --stage skeleton
-python train.py --dataset ntu --stage rgb
-python train.py --dataset ntu --stage fusion
-
-# 3. Evaluate the model on held-out test set
-python test.py --dataset ntu --stage fusion
 ```
 
-**Additional Information**
+*Generates `multiseed_summary.json` containing accuracy statistics.*
 
-### Python and CUDA Check
-Before running, verify your environment:
+### 4. Model Evaluation & Confusion Matrix
+
+Evaluate a trained checkpoint on held-out test data and generate high-resolution confusion matrix figures:
+
 ```
-python --version
-python -c "import torch; print('PyTorch version:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
-```
+python test.py --dataset utd --stage fusion --fusion_type cmaf --cross_attention normal --batch_size 32 --seed 42
 
-### Expected Inputs (for real data)
-- Skeleton: tensor `(N, 3, T=32, V)` where `V=25 (NTU)` or `V=20 (UTD)`.
-- RGB: tensor `(N, 3, 299, 299)` (apply ImageNet normalization if using pretrained).
-- `MMFFDataset` returns a 4-tuple: `(skeleton_feat, rgb_img, 0, label)` where the 3rd element is a placeholder.
-
-**Outputs**
-- Best weights: `best_{stage}_{dataset}.pth`.
-- Training plots: `history_{stage}_{dataset}.png`.
-- Confusion matrix (when not using dummy): `confusion_matrix_{dataset}.png`.
-
-**Troubleshooting**
-- Failing to download `Xception` weights from `timm`:
-	- Ensure Internet on first run; or set `pretrained=False` in [models/backbone.py](models/backbone.py).
-- OOM or memory pressure: reduce `--batch_size` and/or use CPU.
-- `test.py` cannot find weights: run training first to produce `best_{stage}_{dataset}.pth`.
-- If your held-out files are named `val_*`, rename to `test_*` or keep them; loader falls back to legacy `val_*` automatically.
-
-**Configuration Management**
-
-The project now includes a centralized configuration system in [config.py](config.py) that manages all model and training hyperparameters:
-
-### Key Configuration Parameters
-- **Model Architecture**: 
-  - Fusion Transformer: `embed_dim=512`, `num_heads=8`, `transformer_layers=3`, `dropout=0.3`
-  - ST-GCN: Now includes 6 layers at 256 channels for deeper feature extraction
-  - Upgraded from previous defaults for higher model capacity
-
-- **Training Strategy**: 
-  - Stage-specific epochs: skeleton=50, rgb=50, fusion=70
-  - Stage-specific learning rates: skeleton=1e-3, rgb=5e-4, fusion=5e-4
-  - AdamW optimizer with weight_decay=1e-4
-  - Warmup: 5 epochs with linear warmup
-  - Cosine annealing scheduler after warmup
-
-- **Loss Functions**:
-  - CrossEntropy with label_smoothing=0.1 (default)
-  - Optional Focal Loss for class imbalance (toggle via `Config.USE_FOCAL_LOSS`)
-
-- **RGB Training Strategy**:
-  - Gradual unfreezing: RGB backbone frozen initially, unfreezes at epoch 15
-  - Learning rate reduction (0.1x) when unfreezing
-
-### Advanced Training Options
-
-The training script now supports advanced features for achieving 90%+ accuracy:
-
-#### 1. Automatic Config-Based Hyperparameters
-Training commands now use sensible defaults from config:
-```bash
-# Uses Config defaults: epochs=50, lr=1e-3 for skeleton
-python train.py --dataset ntu --stage skeleton
-
-# Override specific parameters
-python train.py --dataset ntu --stage skeleton --epochs 60 --lr 2e-3
 ```
 
-#### 2. Learning Rate Scheduling
-- **Warmup Phase** (5 epochs): Linear warmup from 0 to initial LR
-- **Main Phase**: Cosine annealing to minimum LR (1e-6)
-- Logs current LR each epoch
+### 5. Grad-CAM Visualization
 
-#### 3. Focal Loss for Imbalanced Data
-To enable Focal Loss, edit [config.py](config.py):
-```python
-USE_FOCAL_LOSS = True  # Change from False to True
+Generate spatial attention heatmaps before and after CFEB pose guidance:
+
 ```
-Then re-run training. Focal Loss helps with class imbalance by focusing on hard examples.
+python visualize_gradcam.py --dataset utd --data_dir ./data --model_path best_fusion_utd_cmaf_attn-normal_seed42.pth
 
-#### 4. Gradual Unfreezing (RGB Stage)
-The RGB backbone is automatically frozen initially and unfrozen at epoch 15:
-- Prevents catastrophic forgetting of pretrained ImageNet weights
-- Learning rate reduced 10x when unfreezing for stable fine-tuning
-
-### Hyperparameter Recommendations
-
-For best results on different datasets:
-
-**NTU RGB+D (60 classes)**:
-```bash
-python train.py --dataset ntu --stage skeleton --batch_size 16
-python train.py --dataset ntu --stage rgb --batch_size 16
-python train.py --dataset ntu --stage fusion --batch_size 16
 ```
 
-**UTD-MHAD (27 classes)**:
-```bash
-python train.py --dataset utd --stage skeleton --batch_size 8
-python train.py --dataset utd --stage rgb --batch_size 8
-python train.py --dataset utd --stage fusion --batch_size 8
+*Outputs `gradcam_real_utd.png` showing contextual attention refinement.*
+
+### 6. Inference Latency, Memory & FLOPs Benchmarking
+
+Measure model FLOPs and parameter counts:
+
+```
+python check_model_stats.py --dataset utd --stage fusion --compare_all
+
 ```
 
-**NW-UCLA (10 classes, 21 joints)**:
-```bash
-python train.py --dataset nw-ucla --stage skeleton --batch_size 16
-python train.py --dataset nw-ucla --stage rgb --batch_size 16
-python train.py --dataset nw-ucla --stage fusion --batch_size 16
+Benchmark GPU inference latency, throughput, and peak memory usage:
+
+```
+python benchmark_inference.py --dataset utd --stage fusion --seed 42 --batch_size 1 --max_samples 100 --output benchmark_utd.json
+
 ```
 
-**For systems with limited GPU memory**:
-- Reduce `--batch_size` to 4 or 8
-- Model architecture remains unchanged
+## 📂 Repository Structure
 
-**Note**: Actual improvements depend on dataset quality, split, and training conditions. Results may vary.
+```
+MMFF/
+├── models/
+│   ├── attention.py          # CFEB (CrossModalAttention & Reversed variant)
+│   ├── backbone.py           # RGB Stream (Pre-trained Xception + CFEB)
+│   ├── fusion.py             # CPIB (FusionTransformer & baseline fusions)
+│   ├── st_gcn.py             # Skeleton Stream (10 ST-GCN Blocks)
+│   └── mmff_net.py           # Integrated PCINet Framework
+├── utils/
+│   ├── dataset.py            # PyTorch Dataset, temporal resampling & RGB crop loader
+│   ├── graph.py              # Skeleton graph definitions (UTD, NW-UCLA, HCMUE-SB, NTU)
+│   ├── losses.py             # Focal Loss & Label-Smoothing Cross-Entropy implementation
+│   └── model_stats.py        # Parameters & FLOPs counting utilities (thop integration)
+├── config.py                 # Central hyperparameter configuration
+├── train.py                  # 3-stage training script
+├── test.py                   # Evaluation script & confusion matrix plotter
+├── run_multiseed.py          # Automated multi-seed training & statistical evaluation
+├── benchmark_inference.py    # Latency, throughput, and GPU memory benchmark
+├── check_model_stats.py      # Command-line utility to inspect model parameters/FLOPs
+├── visualize_gradcam.py      # Grad-CAM visualization for CFEB spatial attention
+├── requirements.txt          # Python dependency versions
+├── test_pipeline.py          # Quick dummy end-to-end pipeline verification
+└── README.md                 # Documentation
 
-**Next Steps (TODO)**
-- Monitor training curves and adjust hyperparameters if needed
-- Consider data augmentation tuning if accuracy plateaus
-- Experiment with ensemble methods for further gains
-
-**References & Inspiration**
-- ST-GCN for skeleton-based action recognition.
-- Xception (ImageNet) as the RGB backbone via `timm`.
-- Transformer-based late fusion with a `[CLS]` token.
-- Focal Loss: Lin et al. "Focal Loss for Dense Object Detection" (2017)
-- AdamW: Loshchilov & Hutter "Decoupled Weight Decay Regularization" (2019)
-
-**Contact & Feedback**
-- For issues/bugs: open an issue with a minimal repro and your Python/PyTorch versions.
+```
